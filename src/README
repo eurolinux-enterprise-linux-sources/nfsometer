@@ -1,0 +1,80 @@
+nfsometer -
+
+  A framework for the running and reporting of performance characteristics of 
+  workloads across NFS protocol versions, options and Linux kernels.
+
+
+About
+==================
+
+  author:  Weston Andros Adamson <dros@netapp.com>
+  website: http://wiki.linux-nfs.org/wiki/index.php/NFSometer
+
+
+Dependencies
+==================
+
+  nfsometer depends on several third-party packages and will not run without
+  them installed.
+
+   - matplotlib - used for graph plotting
+   - numpy      - used by matplotlib, stats functions
+   - mako       - used for html templating of reports
+   - nfs-utils  - mount.nfs, mountstats, etc
+   - time       - /bin/time
+
+  On a fedora system the following command will install these packages:
+
+  # sudo yum install python-matplotlib numpy python-mako nfs-utils time
+
+  Other distros will have a similar command.
+
+
+Installation
+================
+
+  nfsometer is designed to be able to run without installation, ie:
+
+  # ./nfsometer.py --help
+
+  nfsometer can also be installed to standard python site-packages and
+  executable directories (must be run as root):
+
+  # python setup.py install
+  # nfsometer --help
+
+
+Using nfsometer
+=================
+
+ See the nfsometer manpage:
+
+  man nfsometer
+
+ Or use the help:
+
+  ./nfsometer.py --help
+
+ And see examples (the same as in the manpage):
+
+  ./nfsometer.py examples
+
+
+Adding a workload
+======================
+
+  Adding a workload is designed to be very simple.
+
+  Copy the 'nfsometer-workload-template' file to a file in the workloads
+  directory that ends with ".nfsometer", edit this file following the
+  instructions contained within.
+
+  Most of the time it's probably easier to just use a custom workload -
+  see the manpage for more info on the custom workload.
+
+
+Contributing back
+==================
+
+See howto-contribute.txt
+

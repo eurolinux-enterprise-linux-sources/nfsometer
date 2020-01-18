@@ -1,0 +1,47 @@
+#
+#   RUNDIR - a newly created directory on the nfs share.
+#            will exist only when running COMMAND.
+#
+#   LOCALDIR - a directory on the local fs meant to serve as storage space for
+#             the fetch stage and setup() call
+#             will exist for setup, fetch stages and when COMMAND is run, but
+#             not durning check().
+#
+
+#
+# the command to run
+#
+COMMAND="$NFSOMETER_CMD"
+
+#
+# command description
+#
+
+NAME="Custom: $NFSOMETER_CMD"
+if [ -n "$NFSOMETER_NAME" ]; then
+	NAME="$NFSOMETER_NAME"
+fi
+
+DESCRIPTION="Custom workload: $NFSOMETER_CMD"
+if [ -n "$NFSOMETER_DESC" ]; then
+	DESCRIPTION="$NFSOMETER_DESC"
+fi
+
+# workload_check()
+#  - no arguments
+#  - any output to stdout means the check failed
+#  - use need_* functions from workloads.sh
+workload_check()
+{
+	need_env "NFSOMETER_CMD"
+}
+
+# workload_setup()
+#  - no arguments
+#  - non-zero return indicates a problem
+workload_setup()
+{
+        return 0
+}
+
+

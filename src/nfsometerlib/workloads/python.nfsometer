@@ -1,0 +1,43 @@
+#
+#   RUNDIR - a newly created directory on the nfs share.
+#            will exist only when running COMMAND.
+# 
+#   LOCALDIR - a directory on the local fs meant to serve as storage space for 
+#             the fetch stage and setup() call
+#             will exist for setup, fetch stages and when COMMAND is run, but
+#             not durning check().
+#
+
+PYTHON="Python-2.7.2"
+TARBALL="$LOCALDIR/$PYTHON.tgz"
+
+URL="http://python.org/ftp/python/2.7.2/$PYTHON.tgz"
+URL_OUT="$PYTHON.tgz"
+
+#
+# the command to run
+#
+COMMAND="tar zxvf $TARBALL && cd $PYTHON && ./configure && make"
+
+# 
+# command description
+#
+DESCRIPTION="A small compile test: the Python interpreter and associated libraries.  Uses Python-2.7.2.tgz from python.org"
+
+# workload_check()
+#  - no arguments
+#  - any output to stdout means the check failed
+#  - use need_* functions from workloads.sh
+workload_check()
+{
+	need_bin tar
+	need_bin make
+}
+
+# workload_setup()
+#  - no arguments
+#  - non-zero return indicates a problem
+workload_setup()
+{
+	return 0
+}

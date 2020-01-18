@@ -1,0 +1,100 @@
+<%doc>
+Copyright 2012 NetApp, Inc. All Rights Reserved,
+contribution by Weston Andros Adamson <dros@netapp.com>
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+</%doc>
+
+% if info.toc:
+ ${info.toc.anchor()}
+% endif
+
+<div class="widget_container">
+ <div class="widget">
+ % if info.toc:
+  <h2>${info.toc.num()} ${info.toc.title()}</h2>
+ % endif
+
+  % if info.workload:
+   ${info.workload}
+   <table class="workload_attrs">
+    <tr>
+     <td>command:</td> <td>${info.command}</td>
+    </tr>
+    <tr>
+     <td>report type:</td> <td>${info.report_type}</td>
+    </tr>
+   </table>
+  % endif
+
+  <h4>${info.total_runs} traces ${info.times}</h4>
+
+  <div class="traces">
+   <table class="info_traces">
+    <tr>
+     <th>runs</th>
+     <th>workload</th>
+     <th>kernel</th>
+     <th>client</th>
+     <th>server</th>
+     <th>path</th>
+     <th>config</th>
+
+    % for i in info.selector_infos:
+    <tr>
+     <td>${i['runs']}</td>
+     <td>${i['workload']}</td>
+     <td>${i['kernel']}</td>
+     <td>${i['client']}</td>
+     <td>${i['server']}</td>
+     <td>${i['path']}</td>
+     <td><span class="mountopt">${i['mdt']}</span></td>
+    </tr>
+    % endfor
+   </table>
+  </div>
+
+  <div class="mount_options">
+    <h4>Options from mount</h4>
+    <table>
+     % for mdt in info.seen_mdts:
+     <tr>
+      <td><span class="mountopt">${mdt}</span></td>
+      <td>${'<br>'.join(info.mount_options[mdt])}</td>
+     </tr>
+     % endfor
+    </table>
+  </div>
+
+  % if info.warnings:
+  <div class="warnings">
+   <h4>Warnings</h4>
+   ${info.warnings}
+  </div>
+  % endif
+
+  % if info.usernotes:
+  <div class="notes">
+   <h4>Notes</h4>
+   <pre>
+   ${''.join(info.usernotes)}
+   </pre>
+  </div>
+  % endif
+
+ </div>
+</div>
+
+% for more in info.more:
+<div class="widget_container">
+ <div class="widget">
+  ${more}
+ </div>
+</div>
+% endfor

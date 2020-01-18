@@ -1,0 +1,577 @@
+/*
+ * Copyright 2012 NetApp, Inc. All Rights Reserved,
+ * contribution by Weston Andros Adamson <dros@netapp.com>
+ * 
+ * This program is free software; you can redistribute it and/or modify it under
+ * the terms of the GNU General Public License as published by the Free Software
+ * Foundation; either version 2 of the License, or (at your option) any later
+ * version.
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+ * FOR A PARTICULAR PURPOSE. See the GNU General Public License for more
+ * details.
+ */
+
+* {
+	font-family: "Times New Roman", "Times", serif;
+}
+
+div.cell {
+	display: table-cell;
+}
+
+a:link {
+        text-decoration: none;
+        color: rgb(7, 102, 153);
+}
+
+a:visited {
+        text-decoration: none;
+        color: rgb(7, 102, 153);
+}
+
+a:hover {
+        text-decoration: none;
+        color: rgb(7, 102, 153);
+}
+
+div.toc a:link {
+        text-decoration: none;
+        color: rgb(51, 163, 223);
+	font-weight: bold;
+}
+
+div.toc a:visited {
+        text-decoration: none;
+        color: rgb(51, 163, 223);
+	font-weight: bold;
+}
+
+div.toc a:hover {
+        text-decoration: none;
+        color: rgb(51, 163, 223);
+	font-weight: bold;
+}
+
+
+li {
+        list-style: none;
+}
+
+/*
+ * Tables
+ */
+
+table.data tr td.label {
+	background-color: #f9f9f9;
+	color: #303030;
+	font-size: 0.8em;
+	border: 1px solid #cccccc;
+	text-align: left;
+	padding: 2px;
+	margin: 0px;
+	-moz-border-radius: 5px;
+	border-radius: 5px;
+	cursor: pointer;
+}
+
+table.data tr th.label {
+	background-color: #f1f1f1;
+	color: #303030;
+	font-size: 0.8em;
+	text-align: center;
+	padding: 2px;
+	margin: 0px;
+	border: 1px solid #8f8f8f;
+	-moz-border-radius: 5px;
+	border-radius: 5px;
+}
+
+table.data tr td.selected {
+	background-color: rgb(247, 247, 234);
+	border-color: rgb(158, 140, 4);
+}
+
+table.data tr td {
+	color: #303030;
+	border: 1px solid #8f8f8f;
+	text-align: right;
+	vertical-align: middle;
+	padding: 2px;
+	margin: 0px;
+	-moz-border-radius: 5px;
+	border-radius: 5px;
+	font-size: 0.9em;
+}
+
+table.data tr td.no_data {
+	background: #f1f1f1;
+	text-align: center;
+	vertical-align: middle;
+	font-size: 0.7em;
+	font-style: oblique;
+}
+
+div.description {
+	clear: both;
+	padding: 20px 0px 30px 0px;
+	margin: 0px 0px 0px 5px;
+}
+
+div.data {
+}
+
+
+h1, h2, h3, h4, h5 {
+	/* color: #101010; */
+        color: #000000;
+	margin: 0px;
+}
+
+h2 {
+	font-size: 2.5em;
+}
+
+h3 {
+	font-size: 1.5em;
+}
+
+div.widget h1,
+div.widget h2 {
+	border-color: rgb(51, 163, 223);
+	border-style: solid;
+	border-width: 0px 0px 1px 0px;
+}
+
+div.widget h3,
+div.widget h4,
+div.widget h5 {
+	border-color: #cccccc;
+	border-style: solid;
+	border-width: 0px 0px 1px 0px;
+}
+
+div.widget_container {
+	margin-top: 20px;
+}
+
+div.widget {
+	display: block;
+	margin: 10px;
+}
+
+body {
+	/* background-color: rgb(106, 153, 185); */
+	background-color: #fefefe;
+}
+
+
+div.dataset {
+	display: table;
+}
+
+div.dataset img {
+	display: table-cell;
+	clear: both;
+}
+
+div.dataset div.dataset_legend {
+	padding: 10px 0px 10px 0px;
+}
+
+div.dataset div.dataset_legend div {
+	margin-bottom: 10px;
+}
+
+div.dataset div.dataset_legend span {
+	font-weight: bold;
+	line-height: 1.5em;
+}
+
+div.dataset div.dataset_legend span.better {
+}
+
+div.dataset div.dataset_legend span.better_sym {
+	color: #003D00;
+	font-weight: bold;
+	font-size: 1.1em;
+}
+
+div.dataset div.dataset_legend span.better_str {
+	color: #003D00;
+	font-weight: bold;
+}
+
+div.dataset div.dataset_legend span.better_more_str {
+	color: #003D00;
+	font-weight: bold;
+	font-size: 0.8em;
+}
+
+div.datasets div.dataset {
+	overflow: hidden;
+	padding: 4px;
+	width: 100%;
+}
+
+div.dataset h4 {
+	padding: 0px 0px 2px 0px;
+}
+
+div.dataset ul {
+	margin: 0px;
+}
+
+div.datasets {
+	clear : both;
+	margin: 0px 0px 0px 10px;
+}
+
+div.report_header {
+        margin: 10px 0px;
+}
+
+div.toc, div.report_index {
+        font-size: 0.7em;
+        padding: 10px;
+        -moz-border-radius: 5px;
+        border-radius: 5px;
+	background-color: #f6f6f6;
+}
+
+div.toc ul {
+        padding: 0px 0px 2px 8px;
+        margin: 0px;
+}
+
+ul.toc li {
+	margin: 0px;
+	padding: 1px;
+}
+
+span.section_num {
+	color: #fefefe;
+	background-color: rgb(51, 163, 223);
+	font-size: 0.7em;
+	padding: 5px;
+	border-radius: 5px;
+}
+
+ul.toc span.section_num {
+	color: rgb(51, 163, 223);
+	background-color: #f6f6f6;
+	padding: 2px;
+}
+
+span.workload_name {
+	font-size: 1.6em;
+	display: block;
+}
+
+span.workload_description {
+	display: block;
+	padding: 10px;
+}
+
+span.workload_command {
+	display: block;
+	margin-left: 20px;
+	padding: 0px 0px 10px 0px;
+}
+
+span.workload_reports {
+	display: block;
+	margin-left: 20px;
+	font-size: 1.4em;
+	padding: 0px 0px 10px 0px;
+}
+
+div.group {
+}
+
+span.kernel,
+span.client,
+span.server,
+span.path {
+	color: #020202;
+	font-size: 8px;
+	clear: both;
+	white-space: nowrap;
+	float: left;
+}
+
+span.mountopt {
+	font-weight: bold;
+	color: #020202;
+	font-size: 1.0em;
+	line-height: 1.4em;
+	white-space: nowrap;
+	float: left;
+}
+
+span.detect {
+	font-weight: bold;
+	color: #020202;
+	font-size: 1.0em;
+	line-height: 1.4em;
+	white-space: nowrap;
+	float: left;
+	padding: 0px 0px 0px 2px;
+}
+
+span.tag {
+	font-weight: bold;
+	color: #020202;
+	font-size: 1.0em;
+	line-height: 1.4em;
+	white-space: nowrap;
+	float: left;
+	padding: 0px 0px 0px 4px;
+}
+
+div.statnotes {
+	font-size: 1.0em;
+	padding: 10px 0px;
+}
+
+div.statnotes li {
+	padding: 5px 0px;
+}
+
+div.dataset_container {
+	clear: both;
+	margin-bottom: 60px;
+}
+
+div.cellhits {
+	clear: both;
+	font-size: 0.7em;
+}
+
+table.data_info_panes {
+	-moz-border-radius: 5px;
+	border-radius: 5px;
+	clear: both;
+	padding: 10px;
+}
+
+tr.data_info_pane {
+	font-size: 0.7em;
+	border: 1px solid #e8e8e8;
+	clear: both;
+	padding: 10px;
+	vertical-align: middle;
+
+	/* js will set display */
+	display: none;
+}
+
+button.dataset_info_show_button {
+	margin-left: 10px;
+}
+
+button.dataset_info_hide_button {
+	margin-left: 10px;
+}
+
+tr.data_info_pane td.data_info_cell {
+	display: table-cell;
+	text-align: left;
+	vertical-align: top;
+	padding: 10px;
+	vertical-align: middle;
+	background-color: #f6f6f6;
+}
+
+span.stddev {
+	font-size: 0.8em;
+	color: #CF2727;
+}
+
+span.units {
+	font-size: 0.7em;
+}
+
+span.hatch {
+	border: 1px solid #707070;
+	color: #101010;
+	font-size: 12px;
+	font-weight: bold;
+	width: 6px;
+	height: 12px;
+	display: inline-block;
+	vertical-align: top;
+	text-align: center;
+}
+
+span.statlink {
+	cursor: pointer;
+}
+
+tr.data_info_pane table {
+	padding: 0px;
+	margin: 0px;
+	text-align: center;
+}
+
+tr.data_info_pane tbody {
+	padding: 0px;
+	margin: 0px;
+}
+
+tr.data_info_pane table th {
+	border-bottom: 1px solid #e9dddd;
+	border-right: 1px solid #e9dddd;
+	padding: 1px;
+	margin: 0px;
+	font-size: 0.7em;
+	vertical-align: bottom;
+}
+
+tr.data_info_pane table td {
+	border-bottom: 1px solid #e9dddd;
+	padding: 1px;
+	margin: 0px;
+	font-size: 0.7em;
+}
+
+div.dataset_top, div.dataset_bottom {
+	clear: both;
+}
+
+div.dataset_top_left {
+}
+
+div.dataset_top_right {
+}
+
+div.dataset_tables {
+	padding-left: 10px;
+}
+
+/* make table as wide as elements above */
+div.dataset_tables table {
+	width: 100%;
+}
+
+div.dataset_tables td {
+	vertical-align: top;
+}
+
+span.zero_data {
+	clear: both;
+}
+
+div.dataset_toggle {
+	clear: both;
+}
+
+div.hatch_legend table {
+	font-size: 0.7em;
+	margin-left: 10px;
+	padding: 4px;
+}
+
+div.hatch_legend div {
+	margin-left: 10px;
+}
+
+div.shortcut {
+	margin-left: 15px;
+	display: table-cell;
+	border-radius: 5px;
+	border: 1px solid rgb(51, 163, 223);
+}
+
+div.shortcut div {
+	padding: 5px;
+	font-size: 0.6em;
+	float: left;
+}
+
+div.dataset img.compare_ref {
+	float: left;
+	clear: none;
+}
+
+div.compare_op {
+	font-weight: bold;
+	padding-right: 2px;
+	float: left;
+}
+
+div.compare_value {
+	float: left;
+}
+
+img.color_box {
+	padding: 0px;
+	margin: 0px;
+	float: left;
+}
+
+div.dataset img.hatch_hit {
+	float: right;
+	clear: none;
+}
+
+tr.data_info_pane img.data_info_hatch {
+	display: inline;
+}
+
+div.dataset_graph_and_table {
+	float: left;
+}
+
+div.subgraphs img {
+	display: none;
+}
+
+table.toc_and_info td {
+	vertical-align: top;
+}
+
+div.nfsometer_title {
+	color: rgb(51, 163, 223);
+	font-size: 2.5em;
+	border-color: rgb(51, 163, 223);
+	border-style: solid;
+	border-width: 0px 0px 1px 1px;
+	padding: 10px;
+	vertical-align: middle;
+}
+
+div.nfsometer_title h1 {
+	font-size: 1.0em;
+	display: inline;
+	padding: 0px 0px 0px 10px;
+}
+
+span.lowlite {
+	color: #dddddd;
+}
+
+table.info_traces th {
+	font-size: 0.6em;
+	color: rgb(51, 163, 223);
+}
+
+table.info_traces td {
+	font-size: 0.7em;
+}
+
+div.mount_options table td {
+	font-size: 0.6em;
+}
+
+table.workload_attrs td {
+	font-size: 0.6em;
+}
+
+table.workload_attrs {
+	margin: 0px 0px 10px 10px;
+}
+
+div.traces, div.mount_options, div.warnings, div.notes {
+	margin: 20px 0px 10px 10px;
+}

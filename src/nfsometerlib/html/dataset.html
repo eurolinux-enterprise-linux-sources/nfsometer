@@ -1,0 +1,74 @@
+<%doc>
+Copyright 2012 NetApp, Inc. All Rights Reserved,
+contribution by Weston Andros Adamson <dros@netapp.com>
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+</%doc>
+
+<div class="dataset_container">
+ ${dataset.toc.anchor()}
+
+% if dataset.anchor:
+ <a name="${dataset.anchor}"></a>
+% endif
+
+ <h3>${dataset.toc.num()} ${dataset.toc.title()}</h3>
+
+ <div class="dataset">
+
+ % if dataset.subtitle:
+  <h4>${dataset.subtitle}</h4>
+ % endif
+
+  <div class="dataset_legend">
+  % for k in dataset.keys:
+   ${dataset.legend_key_html(k)}
+  % endfor
+   <input type="button" class="dataset_info_show_button"
+          value="show per-run data"></input>
+   <input type="button" class="dataset_info_hide_button"
+	  style="display: none;" value="hide per-run data"></input>
+
+   <select class="nfsvers">
+     <option value="all">all versions</option>
+     ${ ''.join([ '<option value="%s">%s</option>' %
+		(x, x) for x in dataset.nfs_versions]) }
+   </select>
+  </div>
+
+ % if dataset.wide_data:
+  <div class="dataset_graph_and_table">
+   ${dataset.graph_tag}
+   <div class="dataset_tables">
+    ${dataset.tab.html()}
+   </div>
+  </div>
+ % else:
+  <div class="dataset_graph_and_table">
+   <table><tr>
+    <td>
+     ${dataset.graph_tag}
+    </td><td>
+     <div class="dataset_tables">
+      ${dataset.tab.html()}
+     </div>
+    </td>
+   </tr></table>
+  </div>
+ % endif
+
+  <table class="data_info_panes">
+   % for info in dataset.infos:
+    ${info}
+   % endfor
+  </table>
+
+ </div>
+</div>
+

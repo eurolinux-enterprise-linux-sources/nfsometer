@@ -1,0 +1,10 @@
+Metadata-Version: 1.0
+Name: nfsometer
+Version: 1.5
+Summary: NFS performance measurement tool
+Home-page: http://wiki.linux-nfs.org/wiki/index.php/NFSometer
+Author: Weston Andros Adamson
+Author-email: dros@netapp.com
+License: GPLv2
+Description: UNKNOWN
+Platform: UNKNOWN

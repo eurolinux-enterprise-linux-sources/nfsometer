@@ -1,0 +1,39 @@
+<%doc>
+Copyright 2012 NetApp, Inc. All Rights Reserved,
+contribution by Weston Andros Adamson <dros@netapp.com>
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+</%doc>
+
+<div class="widget_container">
+ ${widget.toc.anchor()}
+
+ ${widget.report.shortcut_html()}
+
+ <div class="widget">
+  <h2>${widget.toc.num()} ${widget.toc.title()}</h2>
+  <div class="description">
+   ${widget.desc}
+   <div class="statnotes">
+   % for n in widget.statnote_mesgs:
+     <li>${n}</li>
+   % endfor
+   </div>
+   Sourced from tracedir file "${widget.get_stat_file()}".
+  </div>
+
+  <div class="datasets">
+   % for ds in widget.datasets:
+    ${ds.html()}
+   % endfor
+  </div>
+ </div>
+</div>
+
+<p>

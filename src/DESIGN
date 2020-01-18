@@ -1,0 +1,19 @@
+
+NOTE:
+
+ A lot is missing from this file because the NFSometer.py script is in the 
+ process of being completely replaced with a unified web interface.
+
+DATA COLLECTION
+ Trace data is collected in a collection of flat files.  Each trace gets it's 
+ own directory.  Each trace result directory contians an "arguments" file that 
+ has a simple "<key> = <value>" format.
+
+ o always collect the raw, unadulterated source data.  this way, nfsometer 
+   bugs can be fixed, and the report can be rebuilt instead of running all
+   the tests again
+
+ o ANY changes to the tracedir format need to bump TRACEDIR_VERSION
+
+ o Every new TRACEDIR_VERSION MUST make an upgrade step
+

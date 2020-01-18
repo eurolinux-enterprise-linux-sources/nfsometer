@@ -1,0 +1,29 @@
+#
+#   RUNDIR - a newly created directory on the nfs share.
+#            will exist only when running COMMAND.
+# 
+#   LOCALDIR - a directory on the local fs meant to serve as storage space for 
+#             the fetch stage and setup() call
+#             will exist for setup, fetch stages and when COMMAND is run, but
+#             not durning check().
+#
+
+COMMAND="dd if=/dev/zero of=./dd_file.100m_100k bs=102400 count=1024"
+DESCRIPTION="A run of dd(1) writing a 100MB file of zeros in 100k blocks"
+
+# workload_check()
+#  - no arguments
+#  - any output to stdout means the check failed
+#  - use need_* functions from workloads.sh
+workload_check()
+{
+	need_bin dd
+}
+
+# workload_setup()
+#  - no arguments
+#  - non-zero return indicates a problem
+workload_setup()
+{
+	return 0
+}

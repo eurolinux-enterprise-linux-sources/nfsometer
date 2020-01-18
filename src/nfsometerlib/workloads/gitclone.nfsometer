@@ -1,0 +1,39 @@
+#
+#   RUNDIR - a newly created directory on the nfs share.
+#            will exist only when running COMMAND.
+# 
+#   LOCALDIR - a directory on the local fs meant to serve as storage space for 
+#             the fetch stage and setup() call
+#             will exist for setup, fetch stages and when COMMAND is run, but
+#             not durning check().
+#
+
+URL="git://git.linux-nfs.org/projects/trondmy/linux-nfs"
+URL_OUT="linux-nfs"
+
+#
+# the command to run
+#
+COMMAND="git clone $LOCALDIR/linux-nfs"
+
+# 
+# command description
+#
+DESCRIPTION="A git clone of a very large git repo: the linux kernel.  Uses Trond's repo from git.linux-nfs.org.  The measured 'git clone's are cloning from local disk to nfs as to not depend on connectivity to git.linux-nfs.org"
+
+# workload_check()
+#  - no arguments
+#  - any output to stdout means the check failed
+#  - use need_* functions from workloads.sh
+workload_check()
+{
+	need_bin git
+}
+
+# workload_setup()
+#  - no arguments
+#  - non-zero return indicates a problem
+workload_setup()
+{
+	return 0
+}

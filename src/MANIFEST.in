@@ -1,0 +1,11 @@
+include README
+include COPYING
+include DESIGN
+include howto-contribute.txt
+include nfsometer.1
+include nfsometerlib/html/*.js
+include nfsometerlib/html/*.html
+include nfsometerlib/html/*.css
+include nfsometerlib/workloads/*.nfsometer
+include nfsometerlib/workloads/*.sh
+include nfsometerlib/scripts/*.sh

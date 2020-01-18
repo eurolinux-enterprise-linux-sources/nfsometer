@@ -1,0 +1,23 @@
+<%doc>
+Copyright 2012 NetApp, Inc. All Rights Reserved,
+contribution by Weston Andros Adamson <dros@netapp.com>
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version.
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
+</%doc>
+
+<a name="toc_${node.section}"></a>
+<li><span class="section_num"><b>${node.section}</b></span> <a href="#${node.section}">${node.text}</a></li>
+
+% if node.children:
+ <ul class="toc">
+  % for child in node.children:
+   ${child.html()}
+  % endfor
+ </ul>
+% endif

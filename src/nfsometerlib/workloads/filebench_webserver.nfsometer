@@ -1,0 +1,50 @@
+#
+#   RUNDIR - a newly created directory on the nfs share.
+#            will exist only when running COMMAND.
+# 
+#   LOCALDIR - a directory on the local fs meant to serve as storage space for 
+#             the fetch stage and setup() call
+#             will exist for setup, fetch stages and when COMMAND is run, but
+#             not durning check().
+#
+
+FB_WORKLOAD=webserver.f
+FB_RUNTIME=300
+
+FB_SOURCE="/usr/share/filebench/workloads/$FB_WORKLOAD"
+FB_FILE="nfsometer-$FB_WORKLOAD"
+
+#
+# the command to run
+#
+COMMAND="cd $LOCALDIR && filebench -f $FB_FILE"
+
+# 
+# command description
+#
+DESCRIPTION="A 5 minute run of the webserver workload from the filebench test suite"
+
+# workload_check()
+#  - no arguments
+#  - any output to stdout means the check failed
+#  - use need_* functions from workloads.sh
+workload_check()
+{
+	need_bin filebench
+	need_file $FB_SOURCE
+}
+
+# workload_setup()
+#  - no arguments
+#  - non-zero return indicates a problem
+workload_setup()
+{
+	sudo sh -c "echo 0 > /proc/sys/kernel/randomize_va_space"
+
+	cp $FB_SOURCE ./$FB_FILE || return 1
+	echo "set \$dir = $RUNDIR" >> ./$FB_FILE || return 1
+        echo "run $FB_RUNTIME" >> ./$FB_FILE || return 1
+
+	return 0
+}
+

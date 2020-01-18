@@ -1,0 +1,44 @@
+#
+#   RUNDIR - a newly created directory on the nfs share.
+#            will exist only when running COMMAND.
+# 
+#   LOCALDIR - a directory on the local fs meant to serve as storage space for 
+#             the fetch stage and setup() call
+#             will exist for setup, fetch stages and when COMMAND is run, but
+#             not durning check().
+#
+
+LINUX="linux-3.4"
+TARBALL="$LOCALDIR/$LINUX.tar.bz2"
+
+URL="http://www.kernel.org/pub/linux/kernel/v3.0/$LINUX.tar.bz2"
+URL_OUT="$LINUX.tar.bz2"
+
+#
+# the command to run
+#
+COMMAND="tar jxvf $TARBALL && cd $LINUX && make defconfig && make -j4 all modules"
+
+# 
+# command description
+#
+DESCRIPTION="A large compile: the linux kernel.  Uses linux-3.1.1.tar.bz2 from kernel.org.  Does a 'make defconfig' to generate .config, then 'make all modules'"
+
+# workload_check()
+#  - no arguments
+#  - any output to stdout means the check failed
+#  - use need_* functions from workloads.sh
+workload_check()
+{
+	need_bin tar
+	need_bin make
+}
+
+# workload_setup()
+#  - no arguments
+#  - non-zero return indicates a problem
+workload_setup()
+{
+	return 0
+}
+

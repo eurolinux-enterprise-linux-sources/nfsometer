@@ -1,0 +1,265 @@
+." Manual for nfsometer
+.TH man 1 "1.5" "nfsometer"
+.SH NAME
+nfsometer \- NFS performance measurement tool
+.SH SYNOPSIS
+nfsometer [options] [mode] [[<server:path>] [workloads...]]
+.SH DESCRIPTION
+nfsometer is a performance measurement framework for running workloads and reporting results across NFS protocol versions, NFS options and Linux NFS client implementations
+.SH MODES
+Basic usage (no mode specified):
+
+ \fBnfsometer <server:path> [workloads...]\fR
+
+  This will fetch needed files, run traces, and generate reports,
+  same as running the the 'fetch', 'trace' and 'report' stages.
+
+Advanced usage (specify modes):
+
+ \fBnfsometer list\fR
+
+    List the contents of the results directory.
+
+ \fBnfsometer workloads\fR
+
+    List available and unavailable workloads.
+
+ \fBnfsometer notes\fR
+
+    Edit the notes file of the results directory. These notes will
+    be displayed in report headers.
+
+ \fBnfsometer loadgen <server:path> <workload>\fR
+
+    Run in loadgen mode: don't record any stats, just loop over
+    <workload> against <server:path>.  Only one \-o option is allowed.
+    Use the \-n option to run multuple instances of the loadgen workload.
+    When running more than one instance, the intial start times are
+    staggered.
+
+ \fBnfsometer fetch [workloads...]\fR
+
+    Fetch all needed files for the specified workload(s).  If no
+    workloads are specified, all workloads are fetched.
+    Fetched files are only downloaded once and are cached for
+    future runs.
+
+ \fBnfsometer trace <server:path> [workloads...]\fR
+
+    Run traces against <server:path>.  The traces run will be:
+    (options + always options + tags) X (workloads) X (num runs)
+    This will only run traces that don't already exist in the results
+    directory.
+
+ \fBnfsometer report\fR
+
+    Generate all reports available from the results directory.
+
+ \fBnfsometer example\fR
+
+    Show examples from man page
+.SH OPTIONS
+.sp 1
+.TP 0.5i
+.BR " \fB\-r <dir>\fR, \fB\-\-resultdir=<dir>\fR "
+The directory used to save results.
+default: '/home/dros/nfsometer_results'
+
+.sp 1
+.TP 0.5i
+.BR " \fB\-o <mount.nfs options>\fR, \fB\-\-options=<mount.nfs options>\fR "
+Mount options to iterate through.
+This option may be used multiple times.
+Each mount option must have a version specified.
+
+.sp 1
+.TP 0.5i
+.BR " \fB\-a <mount.nfs options>\fR, \fB\-\-always\-options=<mount.nfs options>\fR "
+Options added to every trace.
+This option may be used multiple times.
+
+.sp 1
+.TP 0.5i
+.BR " \fB\-t <tags>\fR, \fB\-\-tag=<tags>\fR "
+Tag all new traces with 'tags'.
+This option may be used multiple times.
+
+.sp 1
+.TP 0.5i
+.BR " \fB\-n <num runs>\fR, \fB\-\-num\-runs=<num runs>\fR "
+Number of runs for each trace of 
+<options> X <tags> X <workloads>
+default: 1
+
+.sp 1
+.TP 0.5i
+.BR " \fB\-\-serial\-graphs\fR "
+Generate graphs inline while generating reports.
+Useful for debugging graphing issues.
+
+.sp 1
+.TP 0.5i
+.BR " \fB\-\-rand\fR "
+Randomize the order of traces
+
+.sp 1
+.TP 0.5i
+.BR " \fB\-h\fR, \fB\-\-help\fR "
+Show the help message
+.SH EXAMPLES
+Example 1: See what workloads are available
+
+  \fB$ nfsometer workloads\fR
+
+  This command lists available workloads and will tell you why
+  workloads are unavailable (if any exist).
+
+
+Example 2: Compare cthon, averaged over 3 runs,
+           across nfs protocol versions
+
+   \fBnfsometer \-n 3 server:/export cthon\fR
+
+  This example uses the default for \-o: "\-o v3 \-o v4 \-o v4.1".
+  To see the results, open results/index.html in a web browser.
+
+
+Example 3: Compare cthon, averaged over 3 runs,
+           between v3 and v4.0 only
+
+  \fBnfsometer \-n 3 \-o v3 \-o v4 server:/export cthon\fR
+
+  This example specifies v3 and v4 only.
+  To see the results, open results/index.html in a web browser.
+
+
+Example 4: Compare two kernels running iozone workload, averaged
+           over 2 runs, across all nfs protocol versions
+
+  nfsometer can compare two (or more) kernel versions, but
+  has no way of building, installing or booting new kernels.
+  It's up to the user to install new kernels.
+  In order for these kernels to be differentiated, 'uname \-a'
+  must be different.
+
+   1) boot into kernel #1
+
+   2) \fBnfsometer \-n 2 server:/export iozone\fR
+
+   3) boot into kernel #2
+
+   4) \fBnfsometer \-n 2 server:/export iozone\fR
+
+   5) open results/index.html in a web browser
+
+  To see the results, open results/index.html in a web browser.
+
+
+Example 5: Using tags
+
+  Tags (the \-t option) can be used to mark nfsometer runs as
+  occurring with some configuration not captured by mount options
+  or detectable tags, such as different sysctl settings (client side),
+  different server side options, or different network conditions.
+
+  1) set server value foo to 2.3
+
+  2) \fBnfsometer \-o v4 \-o v4.1 \-t foo=2.3\fR
+
+  3) set server value foo to 10
+
+  4) \fBnfsometer \-o v4 \-o v4.1 \-t foo=10\fR
+
+  What is passed to \-t is entirely up to the user \- it will not be
+  interpreted or checked by nfsometer at all, so be careful!
+
+  To see the results, open results/index.html in a web browser.
+
+
+Example 6: Always options
+
+  The \-o flag specifies distinct option sets to run, but sometimes
+  there are options that should be present in each.  Instead of
+  writing each one out, you can use the \-a option:
+
+  \fBnfsometer \-o v3 \-o v4 \-a sec=krb5 server:/export iozone\fR
+
+  this is equivalent to:
+
+  \fBnfsometer \-o v3,sec=krb5 \-o v4,sec=krb5 server:/export iozone\fR
+
+
+Example 7: Using the "custom" workload
+
+  A main use case of nfsometer is the "custom" workload \- it allows
+  the user to specify the command that nfsometer is to run.
+
+  NOTE: the command's cwd (current working directory) is the runroot
+        created on the server.
+
+  \fBexport NFSOMETER_CMD="echo foo > bar"\fR
+  \fBexport NFSOMETER_NAME="echo"\fR
+  \fBexport NFSOMETER_DESC="Writes 4 bytes to a file"\fR
+  \fBnfsometer server:/export custom\fR
+
+  This will run 3 traces (v3, v4, v4.1) against server:/export of
+  the command: \fBecho foo > bar\fR.
+
+
+Example 8: Using the loadgen mode
+
+ Loadgen runs several instances of a workload without capturing
+ traces. The idea is that you use several clients to generate
+ load, then another client to measure performance of a loaded
+ server. The "real" run of nfsometer (not loadgen) should mark
+ the traces using the \-t option.
+
+ 1) On client A, run the cthon workload to get a baseline of
+    a server without any load.
+
+   \fBnfsometer trace server:/export cthon\fR
+
+ 2) When that's done, start loadgen on client B:
+
+   \fBnfsometer \-n 10 loadgen server:/export dd_100m_1k\fR
+
+    This runs 10 instances of dd_100m_1k workload on server:/export.
+    It can take several minutes to start in an attempt to stagger
+    all the workload instances.
+
+ 3) once all instances are started, run the "real" nfsometer
+    trace on client A.  Use the \-t option to mark the traces
+    as having run under load conditions:
+
+   \fBnfsometer \-t "10_dd" trace server:/export cthon\fR
+
+ 4) Explain how the tests were set up in the result notes.
+    This should be run on client A (which has the traces:
+
+   \fBnfsometer notes\fR
+
+ 5) Now generate the reports:
+
+   \fBnfsometer report\fR
+
+Example 8: Long running nfsometer trace
+
+  The nfsometer.py script currently runs in the foreground.  As
+  such, it will be killed if the tty gets a hangup or the connection
+  to the client is closed.
+
+  For the time being, nfsometer should be run in a screen
+  session, or run with nohup and the output redirected to a file.
+
+   1) \fBscreen \-RD\fR
+   2) \fBnfsometer \-n 2 server:/export iozone\fR
+   3) close terminal window (or ^A^D)
+   ...
+   4) reattach later with \fBscreen \-RD\fR
+   5) once nfsometer.py is done, results will be in results/index.html
+.SH SEE ALSO
+mountstats, nfsstats
+.SH BUGS
+No known bugs.
+.SH AUTHOR
+Weston Andros Adamson (dros@netapp.com)
