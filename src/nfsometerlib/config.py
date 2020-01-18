@@ -11,12 +11,11 @@ ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 """
 
-import getopt
 import re
 import os, posix, stat, sys
 import socket
 
-NFSOMETER_VERSION='1.5'
+NFSOMETER_VERSION='1.7'
 
 NFSOMETER_MANPAGE='nfsometer.1'
 
@@ -33,7 +32,7 @@ PROBE_DIR='/tmp/nfsometer_probe'
 
 TRACE_ATTRFILE='arguments'
 TRACE_DIR_PREFIX='nfsometer_trace'
-TRACE_DIR_VERSION=9
+TRACE_DIR_VERSION=10
 
 TRACE_MOUNT_TRIES = 3
 TRACE_MOUNT_TRY_DELAY = 1.0
@@ -110,7 +109,7 @@ COLORS = [
 def color_idx(i):
     return i % len(COLORS)
 
-HATCHES = ['/', '.', 'x', '|', 'o', '-', '+', '\\', 'O', '*', ]
+HATCHES = ['/', '.', 'x', '*', '|', 'o', '-', '+', '\\', 'O', ]
 
 def hatch_idx(i):
     assert i > 0
@@ -130,14 +129,12 @@ TEMPLATE_TOC='%s/toc.html' % HTML_DIR
 TEMPLATE_TOCNODE='%s/tocnode.html' % HTML_DIR
 TEMPLATE_TABLE='%s/table.html' % HTML_DIR
 TEMPLATE_DATASET='%s/dataset.html' % HTML_DIR
-TEMPLATE_DATASET_LEGEND_KEY='%s/dataset_legend_key.html' % HTML_DIR
 TEMPLATE_WIDGET='%s/widget.html' % HTML_DIR
 TEMPLATE_REPORT='%s/report.html' % HTML_DIR
 TEMPLATE_INDEX='%s/index.html' % HTML_DIR
 TEMPLATE_REPORTLIST='%s/reportlist.html' % HTML_DIR
 TEMPLATE_DATAINFOPANE='%s/data_info_pane.html' % HTML_DIR
 TEMPLATE_REPORTINFO='%s/report_info.html' % HTML_DIR
-TEMPLATE_SHORTCUT='%s/shortcut.html' % HTML_DIR
 
 _TEMPLATE_CACHE={}
 def html_template(filename):
@@ -215,7 +212,7 @@ def _mountopts_splitvers(mountopt):
         # otherwise something else
         other.append(o)
 
-    if not minor and int(major) >= 4:
+    if not minor and major != None and int(major) >= 4:
         minor = '0'
 
     if major and minor:
@@ -223,7 +220,7 @@ def _mountopts_splitvers(mountopt):
     elif major:
         return ('v%s' % (major,), other)
 
-    raise ValueError('no version found: %s' % (mountopt))
+    raise ValueError("no version found in mount option '%s'" % (mountopt))
 
 def mountopts_version(mountopt):
     return _mountopts_splitvers(mountopt)[0]
@@ -236,8 +233,12 @@ def mountopts_normalize(mountopt):
     return vers
     
 def mountopts_old_syntax(mountopts):
-    vers = mountopts_version(mountopts)
-    return NFS_VERSIONS_OLD_SYNTAX.get(vers, vers)
+    vers, other = _mountopts_splitvers(mountopts)
+    new = NFS_VERSIONS_OLD_SYNTAX.get(vers, vers)
+
+    if other:
+        new += ',' + ','.join(other)
+    return new
 
 def groups_by_nfsvers(groups):
     gmap = {}
@@ -299,6 +300,54 @@ def statnote_v41_pnfs_no_ds(sel):
                    COMMIT operations to pNFS dataservers (unless the
                    DS is also the MDS)."""
     return ''
+
+#
+# Unit Scaling
+#
+SCALE = {
+ 'T': 1024 * 1024 * 1024 * 1024,
+ 'G': 1024 * 1024 * 1024,
+ 'M': 1024 * 1024,
+ 'K': 1024,
+}
+
+def fmt_scale_units(val, units):
+    def near(_val, _scale):
+        return _val >= (_scale * 0.9)
+
+    scale = 1.0
+
+    if units == 'B':
+        if near(val, SCALE['T']):
+            scale = SCALE['T']
+            units = 'TB'
+
+        elif near(val, SCALE['G']):
+            scale = SCALE['G']
+            units = 'GB'
+
+        elif near(val, SCALE['M']):
+            scale = SCALE['M']
+            units = 'MB'
+
+        elif near(val, SCALE['K']):
+            scale = SCALE['K']
+            units = 'KB'
+
+    elif units == 'KB/s':
+        if near(val, SCALE['G']):
+            scale = SCALE['G']
+            units = 'TB/s'
+
+        elif near(val, SCALE['M']):
+            scale = SCALE['M']
+            units = 'GB/s'
+
+        elif near(val, SCALE['K']):
+            scale = SCALE['K']
+            units = 'MB/s'
+
+    return scale, units
  
 #
 # Better API
@@ -316,8 +365,6 @@ BETTER_MORE_IF_IO_BOUND = 4 # but less if time bound
 
 BETTER_EXTRA_MASK = 0x0f
 BETTER_NO_VARIANCE = 0x10
-
-WIDE_DATA_THRESHOLD = 4
 
 def better_info(bounds, better):
     extra = better & (~BETTER_EXTRA_MASK)
@@ -342,7 +389,7 @@ def better_info(bounds, better):
             less_is_better = True
 
     else:
-        return ('', '')
+        return ('', '', '')
 
     more = []
     if extra & BETTER_NO_VARIANCE:
@@ -355,18 +402,19 @@ def better_info(bounds, better):
 
 CONST_TIME_EXCUSE = " as this workload is time constrained"
 
-def fmt_float(f, precision=4):
-    if f != None:
-        w_fmt = "%%.%uf" % precision
-        w_fmt = w_fmt % f
-        while len(w_fmt):
-            if w_fmt[-1] == '0' or w_fmt[-1] == '.':
-                w_fmt = w_fmt[:-1]
-            else:
-                break
+def find_suffix(search, suffixes):
+    """
+        Split 'search' into (name, suffix)
 
-        return w_fmt or '0'
-    return f
+        suffixes - list of suffixes
+    """
+    assert isinstance(suffixes, (list, tuple))
+
+    for s in suffixes:
+        if search.endswith('_' + s):
+            idx = len(search) - len('_' + s)
+            return (search[:idx], search[idx+1:])
+    raise KeyError("key %r has invaid suffix in list %r" % (search, suffixes))
 
 #
 # Console formatting

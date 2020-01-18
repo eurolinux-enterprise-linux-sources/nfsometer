@@ -19,44 +19,26 @@ import os, sys, time
 
 from collection import *
 from config import *
+import selector
 
-def _small_keys(keys):
-    """ attempt to transform a list of keys so that any substrings common
-        to the start or end of all keys is removed """
-    split_keys = []
+_GRAPH_COLLECTION = None
 
-    for k in keys:
-        split_keys.append(k.split('_'))
+def get_collection():
+    global _GRAPH_COLLECTION
+    assert _GRAPH_COLLECTION != None
+    return _GRAPH_COLLECTION
 
-    minwords = min([ len(x) for x in split_keys ])
-
-    remove_idx_list = []
-
-    for i in range(minwords):
-        thisword_same = True
-
-        for skey in split_keys[1:]:
-            if split_keys[0][i] != skey[i]:
-                thisword_same = False
-                break
-
-        if thisword_same:
-            remove_idx_list.append(i)
-
-    # remove words that are the same all across
-    for idx in remove_idx_list[::-1]:
-        for i in range(len(split_keys)):
-            split_keys[i].pop(idx)
-
-    for i in range(len(split_keys)):
-        split_keys[i] = '_'.join(split_keys[i])
-
-    return split_keys
+def set_collection(collection):
+    global _GRAPH_COLLECTION
+    if _GRAPH_COLLECTION == None:
+        _GRAPH_COLLECTION = collection
+    else:
+        assert _GRAPH_COLLECTION == collection
 
 class GraphFactory:
-    def __init__(self, imagedir, serial_gen=False):
+    def __init__(self, collection, imagedir, serial_gen=False):
         self.pool = None
-        self.gen_left = 0
+        self.pool_error = None
         self.gen_count = 0
         self.prune_count = 0
         self.cached_count = 0
@@ -64,6 +46,9 @@ class GraphFactory:
         self.imagedir = imagedir
         self.num_proc = max(multiprocessing.cpu_count() - 2, 2)
         self._cache = set()
+        self.collection = collection
+
+        set_collection(collection)
 
         try:
             os.mkdir(self.imagedir)
@@ -81,8 +66,25 @@ class GraphFactory:
         res = cache_val in self._cache
         return res
 
+    def check_pool(self):
+        if self.pool_error != None:
+            self.pool.terminate()
+            sys.stderr.write("Error generating graphs. ")
+            sys.stderr.write("Run with --serial-graphs to see error\n\n")
+            sys.exit(1)
+
+    def error(self, e):
+        self.pool_error = e
+        try:
+            self.pool.terminate()
+        except RuntimeError:
+            pass
+
     def pool_done(self, res):
-        self.gen_left -= 1
+        if isinstance(res, Exception):
+            self.error(res)
+        elif res:
+            self.gen_count += 1
 
     def make_uniq_str(self, graphtype, attrs):
         o = [
@@ -92,8 +94,6 @@ class GraphFactory:
             ('attrs', hash(repr(attrs))),
         ]
         hval = hash(repr(o))
-        if attrs.has_key('toc'):
-            hval = '%s_%s' % (attrs['toc'], hval)
         return hval
 
     def make_graph(self, graphtype, attrs):
@@ -104,10 +104,14 @@ class GraphFactory:
         if classes:
            other_attrs.append('class="%s"' % ' '.join(classes))
 
+        if attrs.has_key('groups'):
+            if not attrs.has_key('gmap'):
+                attrs['gmap'] = groups_by_nfsvers(attrs['groups'])
+            gmap = attrs['gmap']
+
         if graphtype == 'bar_and_nfsvers':
             all_src = self._graph_src('bar', attrs)
 
-            gmap = groups_by_nfsvers(attrs['groups'])
             num = len(attrs['groups'])
             cur = 0
             sub_src = []
@@ -118,13 +122,71 @@ class GraphFactory:
                 assert cur < num
                 newattrs = dict(attrs)
                 newattrs['groups'] = gmap[vers]
-                newattrs['group_offset'] = cur
-                newattrs['group_total'] = len(gmap[vers])
+                newattrs['selection'] = selector.merge_selectors(gmap[vers])
+                newattrs['gmap'] = {vers: gmap[vers],}
 
                 src = self._graph_src('bar', newattrs)
-                sub_src.append((vers, src))
+                sub_src.append(('vers_' + vers, src))
 
                 cur += len(gmap[vers])
+
+            selection = attrs['selection']
+
+            if len(selection.clients) > 1:
+                for subsel in selection.foreach('client'):
+                    newattrs = dict(attrs)
+                    newattrs['groups'] = \
+                        selector.filter_groups(attrs['groups'], subsel)
+                    newattrs['selection'] = subsel
+                    src = self._graph_src('bar', newattrs)
+                    sub_src.append(('client_' + subsel.client, src))
+
+
+            if len(selection.servers) > 1:
+                for subsel in selection.foreach('server'):
+                    newattrs = dict(attrs)
+                    newattrs['groups'] = \
+                        selector.filter_groups(attrs['groups'], subsel)
+                    newattrs['selection'] = subsel
+                    src = self._graph_src('bar', newattrs)
+                    sub_src.append(('server_' + subsel.server, src))
+
+
+            if len(selection.kernels) > 1:
+                for subsel in selection.foreach('kernel'):
+                    newattrs = dict(attrs)
+                    newattrs['groups'] = \
+                        selector.filter_groups(attrs['groups'], subsel)
+                    newattrs['selection'] = subsel
+                    src = self._graph_src('bar', newattrs)
+                    sub_src.append(('kernel_' + subsel.kernel, src))
+
+            if len(selection.paths) > 1:
+                for subsel in selection.foreach('path'):
+                    newattrs = dict(attrs)
+                    newattrs['groups'] = \
+                        selector.filter_groups(attrs['groups'], subsel)
+                    newattrs['selection'] = subsel
+                    src = self._graph_src('bar', newattrs)
+                    sub_src.append(('path_' + subsel.path, src))
+
+            if len(selection.detects) > 1:
+                for subsel in selection.foreach('detect'):
+                    newattrs = dict(attrs)
+                    newattrs['groups'] = \
+                        selector.filter_groups(attrs['groups'], subsel)
+                    newattrs['selection'] = subsel
+                    src = self._graph_src('bar', newattrs)
+                    sub_src.append(('detect_' + subsel.detect, src))
+
+            if len(selection.tags) > 1:
+                for subsel in selection.foreach('tag'):
+                    newattrs = dict(attrs)
+                    newattrs['groups'] = \
+                        selector.filter_groups(attrs['groups'], subsel)
+                    newattrs['selection'] = subsel
+                    src = self._graph_src('bar', newattrs)
+                    sub_src.append(('tag_' + subsel.tag, src))
 
             def _fmt_hidden(name, value):
                 return '<input type="hidden" name="%s" value="%s">' % \
@@ -153,6 +215,8 @@ class GraphFactory:
 
         if graphtype == 'bar':
             graphfunc = make_bargraph_cb
+        elif graphtype == 'pie':
+            graphfunc = make_pie_cb
         elif graphtype == 'legend':
             graphfunc = make_legend_cb
         else:
@@ -168,13 +232,14 @@ class GraphFactory:
                 graphfunc(*args)
             else:
                 if self.pool == None:
+                    assert get_collection() != None
                     self.pool = multiprocessing.Pool(processes=self.num_proc)
 
                 args.insert(0, graphfunc)
+
+                self.check_pool()
                 self.pool.apply_async(graph_cb_wrapper, args, {},
                                       self.pool_done)
-            self.gen_left += 1
-            self.gen_count += 1
         elif not seen:
             self.cached_count += 1
 
@@ -189,20 +254,31 @@ class GraphFactory:
             os.unlink(os.path.join(self.imagedir, dentry))
             self.prune_count += 1
 
+    def count_images(self):
+        total = 0
+
+        for dentry in os.listdir(self.imagedir):
+            if self._cache_seen(dentry):
+                total += 1
+
+        return total
+
     def wait_for_graphs(self):
         if self.pool:
             self.pool.close()
 
             last_count = None
-            while self.gen_left > 0:
-                if last_count != None and last_count == self.gen_left:
+            while True:
+                left = len(self._cache) - self.count_images()
+
+                if last_count != None and last_count == left:
                     # no progress, just allow join to fix things
                     break
 
-                last_count = self.gen_left
+                last_count = left
 
                 sys.stdout.write("\rGenerating graphs - (%u to go)......" %
-                                 (self.gen_left,))
+                                 (left,))
                 sys.stdout.flush()
                 time.sleep(1)
 
@@ -218,10 +294,10 @@ class GraphFactory:
         if self.prune_count:
             print '  %u files pruned' % self.prune_count
 
-def _fmt_data(x):
+def _fmt_data(x, scale):
     assert not isinstance(x, (list, tuple))
     if isinstance(x, Stat):
-        return x.mean(), x.std()
+        return x.mean() / scale, x.std() / scale
 
     # disallow?
     elif isinstance(x, (float, int, long)):
@@ -245,18 +321,36 @@ def graph_cb_wrapper(graph_f, imgfile, attrs):
         graph_f(imgfile, attrs)
     except KeyboardInterrupt:
         return False
+    except Exception, e:
+        return e
     return True
 
 def make_bargraph_cb(imgfile, attrs):
     graph_width = attrs['graph_width']
     graph_height = attrs['graph_height']
-    units = attrs['units']
-    vals = attrs['vals']
     groups = attrs['groups']
-    keys = attrs['keys']
+    units = attrs['units']
+    key = attrs['key']
     no_ylabel = attrs['no_ylabel']
-    group_offset = attrs['group_offset']
-    group_total = attrs['group_total']
+    hatch_map = attrs['hatch_map']
+    selection = attrs['selection']
+    color_map = attrs['color_map']
+
+    collection = get_collection()
+    _, vals = collection.gather_data([key], selection)
+
+    all_means = []
+    for g in groups:
+        v = vals[g][key]
+        if v != None:
+            all_means.append(float(v.mean()))
+
+    if all_means:
+        maxval = max(all_means)
+    else:
+        maxval = 0.0
+
+    scale, units = fmt_scale_units(maxval, units)
 
     units = _graphize_units(units)
 
@@ -279,72 +373,79 @@ def make_bargraph_cb(imgfile, attrs):
     space_width_portion = 1.0 - bar_width_portion
 
     # bar width
-    width = bar_width_portion / group_total
+    width = bar_width_portion / len(groups)
     # space between bars, two extra - for prespace
-    groupspace = space_width_portion / (group_total + 1)
+
+    version_total = 0
+    last_vers = None
+    for i, g in enumerate(groups):
+        this_vers = mountopts_version(g.mountopt)
+        if not last_vers or last_vers != this_vers:
+            version_total += 1
+        last_vers = this_vers
+
+    groupspace = space_width_portion / (len(groups) + version_total)
 
     # before each grouping of bars (per key)
     space_multiplier = groupspace + width
 
+    vers_space_multiplier = float(space_multiplier) / float(version_total)
+
+    version_count = 0
+    last_vers = None
     for i, g in enumerate(groups):
+        this_vers = mountopts_version(g.mountopt)
+        if not last_vers or last_vers != this_vers:
+            version_count += 1
+        last_vers = this_vers
+
         # both map key -> hidx -> list of values
         valmap = {}
         errmap = {}
 
-        max_hatch_index = -1
-        for key in keys:
-            if not key in valmap:
-                valmap[key] = {}
-            if not key in errmap:
-                errmap[key] = {}
+        max_hatch_index = 0
+        valmap[key] = {}
+        errmap[key] = {}
 
-            val = vals[g].get(key, None)
-            hidx = 0 # default hatch
-            if isinstance(val, Bucket):
-                for s in val.foreach():
-                    x_v, x_s = _fmt_data(s)
-                    hidx = s.hatch_idx()
+        val = vals[g].get(key, None)
+        hidx = 0 # default hatch
+        if isinstance(val, Bucket):
+            for s in val.foreach():
+                x_v, x_s = _fmt_data(s, scale)
+                hidx = hatch_map[s.name]
 
-                    assert not valmap[key].has_key(hidx), \
-                        '%u, %r' % (hidx, val)
-                    assert not errmap[key].has_key(hidx), \
-                        '%u, %r' % (hidx, val)
-                    valmap[key][hidx] = x_v
-                    errmap[key][hidx] = x_s
-            else:
-                x_v, x_s = _fmt_data(val)
+                assert not valmap[key].has_key(hidx), \
+                    '%u, %r' % (hidx, val)
+                assert not errmap[key].has_key(hidx), \
+                    '%u, %r' % (hidx, val)
                 valmap[key][hidx] = x_v
                 errmap[key][hidx] = x_s
+                max_hatch_index = max(max_hatch_index, hidx)
+        else:
+            x_v, x_s = _fmt_data(val, scale)
+            valmap[key][hidx] = x_v
+            errmap[key][hidx] = x_s
 
-            max_hatch_index = max(max_hatch_index, hidx)
 
         assert max_hatch_index >= 0
         assert len(valmap) == len(errmap)
 
-        # get offsets for groups in array form - ie [0.0, 1.0, 2.0] ...
-        ind = np.arange(len(keys))
+        ind = np.arange(1)
 
-        group_idx_adj = i
-        if len(groups) != group_total:
-            group_idx_adj += group_offset
-            # else just using this group so zooming is ok
-
-        adj = groupspace + (space_multiplier * float(group_idx_adj))
+        adj = groupspace + (space_multiplier * float(i)) + \
+              (vers_space_multiplier * float(version_count - 1))
         # add to array to account for bars and spacing
         pos = ind + adj
 
-        bottom = None
+        bottom = [0.0]
         for hidx in range(max_hatch_index + 1):
-            heights = []
-            this_yerr = []
-            for k in keys:
-                heights.append(valmap[k].get(hidx, 0.0))
-                this_yerr.append(errmap[k].get(hidx, 0.0))
+            heights = [valmap[key].get(hidx, 0.0)]
+            this_yerr = [errmap[key].get(hidx, 0.0)]
 
             # old versions of matplotlib dont support error_kw
             bar_kws = {'yerr':      this_yerr,
                        'bottom':    bottom,
-                       'color':     COLORS[color_idx(group_offset + i)],
+                       'color':     color_map[g],
                        'edgecolor': '#000000',
                        'alpha':     0.9,
                        'hatch':     get_hatch(hidx),
@@ -361,12 +462,9 @@ def make_bargraph_cb(imgfile, attrs):
                 del bar_kws['error_kw']
                 ax1.bar(pos, heights, width, **bar_kws)
 
-            if not bottom:
-                bottom = heights
-            else:
-                assert len(bottom) == len(heights)
-                for bx in range(len(bottom)):
-                    bottom[bx] += heights[bx]
+            assert len(bottom) == len(heights)
+            for bx in range(len(bottom)):
+                bottom[bx] += heights[bx]
 
     if not no_ylabel and units != None:
         plt.ylabel(units, size=8)
@@ -375,15 +473,9 @@ def make_bargraph_cb(imgfile, attrs):
         plt.yticks([])
         fig.subplots_adjust(left=0.0, right=1.0)
 
-    # only write key names on x axis if there is more than one key
-    if len(keys) > 1:
-        plt.xticks(ind + (width * (float(len(groups))/2.0)),
-                   [ x for x in _small_keys(keys) ], size=8)
-    else:
-        plt.xticks(ind, [''] * len(keys))
-
-    plt.xlim((0, len(keys)))
-    plt.savefig(imgfile, transparent=True)
+    plt.xticks(ind, [''])
+    plt.xlim((0, 1))
+    plt.savefig(imgfile, transparent=True, bbox_inches='tight')
     plt.close(1)
 
 
@@ -431,6 +523,37 @@ def make_legend_cb(imgfile, attr):
     plt.yticks([])
     plt.xticks(ind, [''] * len(ind))
 
+    plt.savefig(imgfile, transparent=True)
+    plt.close(1)
+
+
+def make_pie_cb(imgfile, attrs):
+    graph_width = attrs['graph_width']
+    graph_height = attrs['graph_height']
+
+    slice_values = attrs['slice_values']
+    slice_labels = attrs['slice_labels']
+    slice_explode = attrs['slice_explode']
+    slice_colors = attrs['slice_colors']
+    slice_hatches = attrs.get('slice_hatches', None)
+
+    fig = plt.figure(1)
+    plt.gcf().set_size_inches(graph_width, graph_height)
+
+    #ax = plt.axes([0.1, 0.1, 0.8, 0.8])
+
+    slices = plt.pie(slice_values, explode=slice_explode,
+                 labels=slice_labels,
+                 autopct='',
+                 colors=slice_colors,
+                 shadow=True)
+
+    if slice_hatches:
+        for i in range(len(slices[0])):
+            slices[0][i].set_hatch(slice_hatches[i])
+
+    plt.xlim((-1.05, 1.05))
+    plt.ylim((-1.05, 1.05))
     plt.savefig(imgfile, transparent=True)
     plt.close(1)
 

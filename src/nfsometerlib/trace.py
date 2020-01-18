@@ -13,7 +13,6 @@ FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 
 import sys
 import os
-import subprocess
 import errno
 import time
 import re
@@ -180,6 +179,18 @@ class TraceAttrs:
 
                 self.__attrs['detects'] = ','.join(new)
 
+            elif tracedir_vers == 9:
+                # get rid of - detects, just show + detects, but without +
+                detects = self.__attrs['detects'].split(',')
+
+                new = []
+
+                for d in detects:
+                    if d.startswith('+'):
+                        new.append(d[1:])
+
+                self.__attrs['detects'] = ','.join(new)
+
             else:
                 raise Exception("Unhandled tracedir_version: %s" % (tracedir_vers,))
 
@@ -207,7 +218,6 @@ class TraceAttrs:
 
     def set(self, name, value):
         self.__attrs[name] = value
-        self._write()
 
     def to_dict(self):
         return self.__attrs
@@ -219,7 +229,7 @@ class TraceAttrs:
             o.append('  %-10s: %s' % (k, self.__attrs[k]))
         return '\n'.join(o)
 
-    def _write(self):
+    def write(self):
         if self.__temp:
             return
         f = file(self.__attrfile, 'w+')
@@ -328,6 +338,13 @@ def _try_unmount(attrs, quiet=False, cleanup=False):
         #quiet = True
 
     if not quiet:
+        sys.stdout.write("Syncing: %s..." % attrs.get('serverpath'))
+        sys.stdout.flush()
+
+    cmd('sudo sync')
+
+    if not quiet:
+        sys.stdout.write('.\n')
         sys.stdout.write("Unmounting: %s..." % attrs.get('serverpath'))
         sys.stdout.flush()
 
@@ -488,17 +505,13 @@ def probe_detect(probe_trace_dir, mountopt):
     if _ops_have_data(pnfs_ops):
         assert mountopts_version(mountopt) == 'v4.1', \
             "expected v4.1 for tag pnfs, but mountopt = %r" % (mountopt,)
-        detect.append('+' + DETECT_PNFS)
-    elif mountopts_version(mountopt) == 'v4.1':
-        detect.append('-' + DETECT_PNFS)
+        detect.append(DETECT_PNFS)
 
     deleg_ops = ['DELEGRETURN']
     if _ops_have_data(deleg_ops):
         assert mountopts_version(mountopt) in ('v4.0', 'v4.1'), \
             "expected v4.x for tag deleg, but mountopt = %r" % (mountopt,)
-        detect.append('+' + DETECT_DELEG)
-    elif mountopts_version(mountopt) in ('v4.0', 'v4.1'):
-        detect.append('-' + DETECT_DELEG)
+        detect.append(DETECT_DELEG)
 
     detect = ','.join(detect)
 
@@ -554,6 +567,8 @@ def start(mountopts, serverpath, workload, detects, tags, is_setup=False,
     if is_probe:
         attrs.set('is_probe', 1)
 
+    attrs.write()
+
     _try_mount(attrs)
 
     if not is_setup:
@@ -566,6 +581,7 @@ def stop(resdir=None):
         raise IOError("Result directory '%s' already exists" % resdir)
 
     attrs.set('stoptime', time.time())
+    attrs.write()
 
     is_setup = long(attrs.get('is_setup', 0))
     is_probe = long(attrs.get('is_probe', 0))
@@ -663,7 +679,7 @@ def get_trace_list(collection, resultdir, workloads_requested,
                                     detects, tags,
                                     client, server, path)
 
-            if collection.has_trace(sel):
+            if collection.has_traces(sel):
                 tracestat = collection.get_trace(sel)
                 already = tracestat.num_runs()
             else:

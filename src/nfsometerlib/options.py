@@ -11,9 +11,9 @@ ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 """
 
+import os, posix, sys
 import getopt
 import re
-import os, posix, stat, sys
 
 from config import *
 
@@ -462,7 +462,10 @@ Example 8: Long running nfsometer trace
         errors = []
         self.mountopts = []
         for x in mountopts:
-            vers = mountopts_version(x)
+            try:
+                vers = mountopts_version(x)
+            except ValueError, e:
+                self.usage(str(e))
             self.mountopts.append(x)
 
         if errors:

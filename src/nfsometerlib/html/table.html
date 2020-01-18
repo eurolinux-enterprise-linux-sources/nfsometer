@@ -14,24 +14,28 @@ FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 <div class="dataset_table">
  <table class="${table.classes()}">
 
- % if len(table.keys) > 1:
+ % if len(table.keys) > 1 and not table.noheader:
   <tr>
-   <th></th>
+   % if not table.nolabels:
+    <th></th>
+   % endif
 
    % for k in table.keys:
-   <th class="label">${table.html_key(k)}</th>
+   <th class="label">${table.formatted_keys[k]}</th>
    % endfor
   </tr>
  % endif
 
   % for g in table.groups:
   <tr>
-   <td class="label">
-     ${table.html_group(g)}
-   </td>
+   % if not table.nolabels:
+    <td class="label">
+     ${table.formatted_groups[g]}
+    </td>
+   % endif
 
    % for k in table.keys:
-   ${table.html_cell(g,k)}
+   ${table.formatted_cells[(g, k)]}
    % endfor
 
   </tr>

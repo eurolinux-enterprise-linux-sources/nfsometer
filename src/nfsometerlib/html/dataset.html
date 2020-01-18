@@ -27,47 +27,139 @@ FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
  % endif
 
   <div class="dataset_legend">
-  % for k in dataset.keys:
-   ${dataset.legend_key_html(k)}
-  % endfor
-   <input type="button" class="dataset_info_show_button"
-          value="show per-run data"></input>
-   <input type="button" class="dataset_info_hide_button"
-	  style="display: none;" value="hide per-run data"></input>
 
-   <select class="nfsvers">
-     <option value="all">all versions</option>
-     ${ ''.join([ '<option value="%s">%s</option>' %
-		(x, x) for x in dataset.nfs_versions]) }
-   </select>
+  % if dataset.bucket_pie or dataset.bucket_legend:
+   <table><tr>
+    <td>
+         <div> ${dataset.description} </div>
+         <div class="hatch_legend"> ${dataset.bucket_legend} </div> </td>
+    <td>
+         ${dataset.bucket_pie}
+         % if dataset.bucket_pie:
+          <div class="pie_caption">
+           breakdown of group by operation across all traces
+          </div>
+         % endif
+    </td>
+   </tr></table>
+  % endif
   </div>
 
- % if dataset.wide_data:
   <div class="dataset_graph_and_table">
-   ${dataset.graph_tag}
+   ${dataset.graph_html}
+
+
+  <div class="dataset_select">
+   graph
+
+   <select class="graph_view">
+     <option value="all">everything</option>
+
+     <optgroup label="version:">
+     ${ ''.join([ '<option value="vers_%s">%s</option>' %
+		(x, x) for x in dataset.nfs_versions]) }
+     </optgroup>
+
+     % if len(dataset.selection.clients) > 1:
+      <optgroup label="clients:">
+      % for x in dataset.selection.clients:
+        <option value="client_${x}">client: ${x}</option>
+      % endfor
+      </optgroup>
+     % endif
+
+     % if len(dataset.selection.servers) > 1:
+      <optgroup label="servers:">
+      % for x in dataset.selection.servers:
+        <option value="server_${x}">server: ${x}</option>
+      % endfor
+      </optgroup>
+     % endif
+
+     % if len(dataset.selection.kernels) > 1:
+      <optgroup label="kernels:">
+      % for x in dataset.selection.kernels:
+        <option value="kernel_${x}">kernel: ${x}</option>
+      % endfor
+      </optgroup>
+     % endif
+
+     % if len(dataset.selection.paths) > 1:
+      <optgroup label="paths:">
+      % for x in dataset.selection.paths:
+        <option value="path_${x}">path: ${x}</option>
+      % endfor
+      </optgroup>
+     % endif
+
+     % if len(dataset.selection.detects) > 1:
+      <optgroup label="detected options:">
+      % for x in dataset.selection.detects:
+       % if x:
+        <option value="detect_${x}">detected options: ${x}</option>
+       % else:
+        <option value="detect_${x}">(no detected options)</option>
+       % endif
+      % endfor
+      </optgroup>
+     % endif
+
+     % if len(dataset.selection.tags) > 1:
+      <optgroup label="user defined tags:">
+      % for x in dataset.selection.tags:
+       % if x:
+        <option value="tag_${x}">tags: ${x}</option>
+       % else:
+        <option value="tag_${x}">(no tags)</option>
+       % endif
+      % endfor
+      </optgroup>
+     % endif
+   </select>
+
+   view
+
+   <select class="table_view">
+     <option value="averages">averages</option>
+
+     <option value="rundata">run data</option>
+
+     % if dataset.all_buckets:
+      <option value="hits">breakdown</option>
+     % endif
+
+     % if dataset.comparison_vals_map['config']:
+      <option value="config">config comparison</option>
+     % endif:
+
+     % if dataset.comparison_vals_map['mountopt']:
+      <option value="mountopt">mountopt comparison</option>
+     % endif:
+
+     % if dataset.comparison_vals_map['config']:
+      <option value="detect">detect comparison</option>
+     % endif:
+
+     % if dataset.comparison_vals_map['config']:
+      <option value="tag">tag comparison</option>
+     % endif:
+
+   </select>
+
+   <div class="dataset_better">
+    <span class="better_sym">${dataset.better_sym}</span>
+    <span class="better_str">${dataset.better_str}</span>
+    % for more in dataset.better_more:
+     <span class="better_more_str">${more}</span>
+    % endfor
+   </div>
+
+  </div>
+
    <div class="dataset_tables">
     ${dataset.tab.html()}
    </div>
   </div>
- % else:
-  <div class="dataset_graph_and_table">
-   <table><tr>
-    <td>
-     ${dataset.graph_tag}
-    </td><td>
-     <div class="dataset_tables">
-      ${dataset.tab.html()}
-     </div>
-    </td>
-   </tr></table>
-  </div>
- % endif
-
-  <table class="data_info_panes">
-   % for info in dataset.infos:
-    ${info}
-   % endfor
-  </table>
 
  </div>
 </div>

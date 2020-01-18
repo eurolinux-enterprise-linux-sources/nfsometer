@@ -12,63 +12,29 @@
  * details.
  */
 
-function info_mode(obj) {
+function table_view(obj) {
+    var view = $(obj).find('option:selected').attr('value');
     var ds = $(obj).parents('div[class=dataset]');
-    var show_button = ds.find('input[class=dataset_info_show_button]');
-    var hide_button = ds.find('input[class=dataset_info_hide_button]');
-    var infos = ds.find('tr[class=data_info_pane]');
-    var label_td = ds.find('td[class*=label]');
 
-    infos.show();
-    show_button.hide();
-    hide_button.show();
-    label_td.addClass('selected');
+    var all_divs = ds.find('div[class^=compare_]');
+    var this_divs = ds.find('div[class=compare_' + view + ']');
 
-    return;
-}
+    var label_detail = ds.find('div[class=group_normal]')
+    var label_normal = ds.find('div[class=group_detail]')
 
-function table_mode(obj) {
-    var ds = $(obj).parents('div[class=dataset]');
-    var show_button = ds.find('input[class=dataset_info_show_button]');
-    var hide_button = ds.find('input[class=dataset_info_hide_button]');
-    var infos = ds.find('tr[class=data_info_pane]');
-    var label_td = ds.find('td[class*=label]');
-
-    infos.hide();
-    show_button.show();
-    hide_button.hide();
-    label_td.removeClass('selected');
-
-    return;
-}
-
-function show_data_info(obj) {
-    var label_td = $(obj)
-    var pane_id = label_td.find('input[name*="pane_id"]').attr('value');
-    var ds = label_td.parents('div[class=dataset]');
-    var show_button = ds.find('input[class=dataset_info_show_button]');
-    var hide_button = ds.find('input[class=dataset_info_hide_button]');
-    var infos = ds.find('tr[class=data_info_pane]');
-    var sel = ds.find('tr[id*="' + pane_id + '"]');
-
-    if (sel.is(":visible")) {
-        sel.hide();
-        label_td.removeClass('selected');
+    if (view == 'rundata') {
+        label_detail.hide();
+        label_normal.show();
     } else {
-        sel.show();
-        label_td.addClass('selected');
+        label_normal.hide();
+        label_detail.show();
     }
 
-    if (infos.find(":visible").length) {
-        show_button.hide();
-        hide_button.show();
-    } else {
-        show_button.show();
-        hide_button.hide();
-    }
+    all_divs.hide();
+    this_divs.show();
 }
 
-function show_data_nfsvers(obj) {
+function graph_view(obj) {
     var nfsvers = $(obj).find('option:selected').attr('value');
     var ds = $(obj).parents('div[class=dataset]');
 
@@ -78,18 +44,11 @@ function show_data_nfsvers(obj) {
     img.attr('src', newsrc);
 }
 
-
 $(document).ready(function() {
-    $('.nfsvers').change(function(){
-        show_data_nfsvers(this);
+    $('.graph_view').change(function(){
+        graph_view(this);
     });
-    $('.label').click(function(){
-        show_data_info(this);
-    });
-    $('input.dataset_info_show_button').click(function(){
-        info_mode(this);
-    });
-    $('input.dataset_info_hide_button').click(function(){
-        table_mode(this);
+    $('.table_view').change(function(){
+        table_view(this);
     });
 });

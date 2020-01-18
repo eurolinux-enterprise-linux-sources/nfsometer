@@ -37,6 +37,10 @@ class Selector(object):
     def __init__(self, *args):
         things = []
 
+        if len(args) == 0:
+            # make all empty args
+            args = [ [] for i in range(len(SELECTOR_ORDER)) ]
+
         assert len(args) == len(SELECTOR_ORDER)
 
         for idx, name in enumerate(SELECTOR_ORDER):
@@ -76,7 +80,7 @@ class Selector(object):
     def compare_order(self, other, order):
         for name in order:
             r = cmp(getattr(self, name + 's'), getattr(other, name + 's'))
-            if r:
+            if r != 0:
                 return r
         return 0
 
@@ -101,13 +105,14 @@ class Selector(object):
             raise AttributeError, "invalid attribute: %r" % attr
 
     def __add__(self, other):
+        new = Selector()
         for name in SELECTOR_ORDER:
-            vals = []
-            vals.extend(obj)
-            vals.extend(getattr(other, name + 's'))
-            vals = set(vals)
+            vals = set(getattr(self, name + 's'))
+            for x in getattr(other, name + 's'):
+                vals.add(x)
+            setattr(new, name + 's', list(vals))
 
-            setattr(self, name + 's', vals)
+        return new
 
     def html(self):
         out = []
@@ -126,8 +131,6 @@ class Selector(object):
         return True
 
     def _foreach_thing(self, thing):
-        assert thing
-
         if isinstance(thing, (list, tuple)):
             thing = list(thing)
             more_things = thing[1:]
@@ -162,12 +165,10 @@ class Selector(object):
             yield x
 
     def fmt(self, thing, short=True, title=False):
-        assert thing in _valid_things
         x = getattr(self, thing + 's')
         return _fmt(thing, x, default = lambda x : ' '.join(x), short=short)
 
     def title(self, thing):
-        assert thing in _valid_things
         x = getattr(self, thing + 's')
         return "%s%s" % (thing, pluralize(len(obj)))
 
@@ -186,4 +187,25 @@ class Selector(object):
                 display_info.append(entry)
 
         return display_info
+
+    def contains(self, other):
+        for name in SELECTOR_ORDER:
+            this = set(getattr(self, name + 's'))
+            other_list = getattr(other, name + 's')
+
+            # make sure each element of other is in self
+            for o in other_list:
+                if not o in this:
+                    return False
+
+        return True
+
+def merge_selectors(selectors):
+    total = Selector()
+    for s in selectors:
+        total += s
+    return total
+
+def filter_groups(groups, selector):
+    return [ g for g in groups if selector.contains(g) ]
 

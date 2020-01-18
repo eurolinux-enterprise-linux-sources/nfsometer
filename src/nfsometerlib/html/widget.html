@@ -14,8 +14,6 @@ FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 <div class="widget_container">
  ${widget.toc.anchor()}
 
- ${widget.report.shortcut_html()}
-
  <div class="widget">
   <h2>${widget.toc.num()} ${widget.toc.title()}</h2>
   <div class="description">
@@ -25,7 +23,10 @@ FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
      <li>${n}</li>
    % endfor
    </div>
-   Sourced from tracedir file "${widget.get_stat_file()}".
+   <table> <tr>
+     <td>${widget.bucket_pie_html}</td>
+     <td>${widget.bucket_table_html}</td>
+   </tr> </table>
   </div>
 
   <div class="datasets">

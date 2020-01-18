@@ -11,56 +11,22 @@ ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 </%doc>
 
-<tr class="data_info_pane" id="${pane_id}">
- <td class="data_info_cell">
-  ${selection.html()}
-
-  % if stat and not stat.empty():
-  <div>avg: ${fmt_float(stat.mean())}</div>
-  <div>stddev: ${fmt_float(stat.std())}</div>
-  % endif
-
- </td>
-
- <td class="data_info_cell">
-  % if stat and not stat.empty():
-  <table>
-
+<div class="data_info_pane">
+ <table>
    <tr>
-    <th>run</th>
-    % if isinstance(stat, bucket_type):
-    <th>total</th>
-    % endif
-    <th>source</th>
-    % for x in stat.foreach():
-    <th>${get_legend_html(report, color_idx, x.hatch_idx(),
-                          classes=('data_info_hatch',))}
-	% if isinstance(stat, bucket_type):
-        <br>${x.name()[:-1 * (len(stat.suffix()) + 1)]}
-        % else:
-        <br>${x.name()}
-        % endif
-    </th>
+    % for hdr in table_hdrs:
+     <th>${hdr}</th>
     % endfor
    </tr>
 
-   % for run, tracedir in enumerate(stat.tracedirs()):
+  % for row in table_rows:
    <tr>
-     <td><a href="${tracedir}/">[${run}]</a>
-    % if isinstance(stat, bucket_type):
-     <td>${fmt_float(stat.run_total(tracedir))} </td>
-    % endif
-     </td>
-    <td>
-      <a href="${tracedir}/${stat.filename()}">${stat.filename()}</a>
-    </td>
-    % for x in stat.foreach():
-     <td>${fmt_float(x.run_value(tracedir, None))}</td>
+    % for col in row:
+     <td>${col}</td>
     % endfor
    </tr>
-   % endfor
-
-  </table>
-  % endif
- </td>
-</tr>
+  % endfor
+ </table>
+ <div>avg: ${avg}</div>
+ <div>stddev: ${std}</div>
+</div>

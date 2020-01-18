@@ -23,13 +23,11 @@ nfsometerlib/trace.py
 nfsometerlib/workloads.py
 nfsometerlib/html/data_info_pane.html
 nfsometerlib/html/dataset.html
-nfsometerlib/html/dataset_legend_key.html
 nfsometerlib/html/index.html
 nfsometerlib/html/report.html
 nfsometerlib/html/report_info.html
 nfsometerlib/html/reportlist.html
 nfsometerlib/html/script.js
-nfsometerlib/html/shortcut.html
 nfsometerlib/html/style.css
 nfsometerlib/html/table.html
 nfsometerlib/html/toc.html

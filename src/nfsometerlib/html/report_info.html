@@ -27,9 +27,6 @@ FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
     <tr>
      <td>command:</td> <td>${info.command}</td>
     </tr>
-    <tr>
-     <td>report type:</td> <td>${info.report_type}</td>
-    </tr>
    </table>
   % endif
 
@@ -44,7 +41,7 @@ FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
      <th>client</th>
      <th>server</th>
      <th>path</th>
-     <th>config</th>
+     <th colspan="3">config</th>
 
     % for i in info.selector_infos:
     <tr>
@@ -54,7 +51,7 @@ FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
      <td>${i['client']}</td>
      <td>${i['server']}</td>
      <td>${i['path']}</td>
-     <td><span class="mountopt">${i['mdt']}</span></td>
+     <td>${i['mdt']}</td>
     </tr>
     % endfor
    </table>

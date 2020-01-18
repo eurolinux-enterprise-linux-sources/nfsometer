@@ -38,19 +38,16 @@ a:hover {
 div.toc a:link {
         text-decoration: none;
         color: rgb(51, 163, 223);
-	font-weight: bold;
 }
 
 div.toc a:visited {
         text-decoration: none;
         color: rgb(51, 163, 223);
-	font-weight: bold;
 }
 
 div.toc a:hover {
         text-decoration: none;
         color: rgb(51, 163, 223);
-	font-weight: bold;
 }
 
 
@@ -72,7 +69,6 @@ table.data tr td.label {
 	margin: 0px;
 	-moz-border-radius: 5px;
 	border-radius: 5px;
-	cursor: pointer;
 }
 
 table.data tr th.label {
@@ -90,6 +86,10 @@ table.data tr th.label {
 table.data tr td.selected {
 	background-color: rgb(247, 247, 234);
 	border-color: rgb(158, 140, 4);
+}
+
+table.data tr td div td {
+	border: 0px;
 }
 
 table.data tr td {
@@ -188,21 +188,23 @@ div.dataset div.dataset_legend span {
 	line-height: 1.5em;
 }
 
-div.dataset div.dataset_legend span.better {
-}
-
-div.dataset div.dataset_legend span.better_sym {
+span.better_sym {
 	color: #003D00;
 	font-weight: bold;
 	font-size: 1.1em;
 }
 
-div.dataset div.dataset_legend span.better_str {
+div.dataset_better {
+float: right;
+clear: both;
+}
+
+span.better_str {
 	color: #003D00;
 	font-weight: bold;
 }
 
-div.dataset div.dataset_legend span.better_more_str {
+span.better_more_str {
 	color: #003D00;
 	font-weight: bold;
 	font-size: 0.8em;
@@ -286,7 +288,13 @@ span.workload_reports {
 	padding: 0px 0px 10px 0px;
 }
 
-div.group {
+div.group_normal {
+	float: left;
+}
+
+div.group_detail {
+	float: left;
+	font-size: 0.7em;
 }
 
 span.kernel,
@@ -355,26 +363,15 @@ table.data_info_panes {
 	padding: 10px;
 }
 
-tr.data_info_pane {
+div.data_info_pane {
 	font-size: 0.7em;
 	border: 1px solid #e8e8e8;
 	clear: both;
 	padding: 10px;
 	vertical-align: middle;
-
-	/* js will set display */
-	display: none;
 }
 
-button.dataset_info_show_button {
-	margin-left: 10px;
-}
-
-button.dataset_info_hide_button {
-	margin-left: 10px;
-}
-
-tr.data_info_pane td.data_info_cell {
+div.data_info_pane td.data_info_cell {
 	display: table-cell;
 	text-align: left;
 	vertical-align: top;
@@ -408,18 +405,18 @@ span.statlink {
 	cursor: pointer;
 }
 
-tr.data_info_pane table {
+div.data_info_pane table {
 	padding: 0px;
 	margin: 0px;
 	text-align: center;
 }
 
-tr.data_info_pane tbody {
+div.data_info_pane tbody {
 	padding: 0px;
 	margin: 0px;
 }
 
-tr.data_info_pane table th {
+div.data_info_pane table th {
 	border-bottom: 1px solid #e9dddd;
 	border-right: 1px solid #e9dddd;
 	padding: 1px;
@@ -428,7 +425,7 @@ tr.data_info_pane table th {
 	vertical-align: bottom;
 }
 
-tr.data_info_pane table td {
+div.data_info_pane table td {
 	border-bottom: 1px solid #e9dddd;
 	padding: 1px;
 	margin: 0px;
@@ -489,18 +486,18 @@ div.shortcut div {
 	float: left;
 }
 
-div.dataset img.compare_ref {
+div.dataset img.cmp_ref {
 	float: left;
 	clear: none;
 }
 
-div.compare_op {
+div.cmp_op {
 	font-weight: bold;
 	padding-right: 2px;
 	float: left;
 }
 
-div.compare_value {
+div.cmp_value {
 	float: left;
 }
 
@@ -515,7 +512,7 @@ div.dataset img.hatch_hit {
 	clear: none;
 }
 
-tr.data_info_pane img.data_info_hatch {
+div.data_info_pane img.data_info_hatch {
 	display: inline;
 }
 
@@ -551,13 +548,19 @@ span.lowlite {
 	color: #dddddd;
 }
 
+table.info_traces {
+	width: 100%;
+}
+
 table.info_traces th {
 	font-size: 0.6em;
 	color: rgb(51, 163, 223);
+	text-align: left;
 }
 
 table.info_traces td {
 	font-size: 0.7em;
+	text-align: left;
 }
 
 div.mount_options table td {
@@ -574,4 +577,8 @@ table.workload_attrs {
 
 div.traces, div.mount_options, div.warnings, div.notes {
 	margin: 20px 0px 10px 10px;
+}
+
+div.pie_caption {
+	font-size: 0.3em;
 }

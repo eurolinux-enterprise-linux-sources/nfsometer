@@ -1,6 +1,6 @@
 Name: nfsometer		
-Version: 1.5
-Release: 2%{?dist}
+Version: 1.7
+Release: 0%{?dist}
 Summary: NFS Performance Framework Tool
 
 Group: Applications/System
@@ -44,6 +44,12 @@ NFS client implementations.
 %doc COPYING README
 
 %changelog
+* Wed Jan 29 2014 Steve Dickson <steved@redhat.com> 1.7-0
+- Updated to the latest upstream release: 1.7 (bz 1059371)
+
+* Fri Dec 27 2013 Daniel Mach <dmach@redhat.com> - 1.5-3
+- Mass rebuild 2013-12-27
+
 * Sat Aug 03 2013 Fedora Release Engineering <rel-eng@lists.fedoraproject.org> - 1.5-2
 - Rebuilt for https://fedoraproject.org/wiki/Fedora_20_Mass_Rebuild
 

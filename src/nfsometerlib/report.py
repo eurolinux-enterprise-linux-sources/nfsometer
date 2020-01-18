@@ -11,15 +11,30 @@ ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
 FOR A PARTICULAR PURPOSE. See the GNU General Public License for more details.
 """
 
-import os, sys, stat
-import curses
+import os
 from math import sqrt, pow
+import time
 
 import graph
 from collection import *
 from selector import Selector, SELECTOR_ORDER
 from config import *
 from workloads import *
+
+ENABLE_PIE_GRAPHS=False
+
+def strip_key_prefix(k):
+    s = k.split(':', 1)
+    if len(s) == 2:
+        return s[1]
+    return k
+
+# handle: has data, not reference point
+def pct_f(x, y):
+    if y == 0.0:
+        return 0.0
+    pct = (float(x) / float(y)) * 100.0
+    return pct
 
 def get_legend_html(r, color_idx, hatch_idx, classes):
     color = None
@@ -28,72 +43,90 @@ def get_legend_html(r, color_idx, hatch_idx, classes):
         color = COLORS[color_idx]
 
     graph_attrs = {
-        'width':     0.22,
-        'height':    0.22,
+        'width':     0.18,
+        'height':    0.18,
         'color':     color,
         'hatch_idx': hatch_idx,
         'classes':   classes,
     }
     return r.graphs.make_graph('legend', graph_attrs)
 
-def html_fmt_kernel(kernel):
-    return '<br><span class="kernel">%s</span>' % (kernel,)
+def fmt_float(f, precision=4):
+    if f != None:
+        w_fmt = "%%.%uf" % precision
+        w_fmt = w_fmt % f
+        seen_dot = False
+        while len(w_fmt):
+            if not seen_dot and w_fmt[-1] == '0':
+                w_fmt = w_fmt[:-1]
+            elif w_fmt[-1] == '.':
+                w_fmt = w_fmt[:-1]
+                seen_dot = True
+            else:
+                break
 
-def html_fmt_client(client):
-    return '<span class="client">%s</span>' % (client,)
-
-def html_fmt_server(server):
-    return '<span class="server">%s</span>' % (server,)
-
-def html_fmt_path(path):
-    return '<span class="path">%s</span>' % (path,)
-
-def html_fmt_mountopt(mountopt):
-    return '<span class="mountopt">%s</span>' % (mountopt,)
-
-def html_fmt_detect(detect):
-    return '<span class="detect">%s</span>' % (detect,)
-
-def html_fmt_tag(tag):
-    return '<span class="tag">%s</span>' % (tag,)
+        return w_fmt or '0'
+    return f
 
 def html_fmt_group(g, report_selector):
     assert isinstance(g, Selector)
+
+    def _html_selector_thing(sel, thing):
+        return '<span class="%s">%s</span>' % (thing, getattr(sel, thing))
+
     # always display mountopt
-    descr = html_fmt_mountopt(g.mountopt)
+    descr = _html_selector_thing(g, 'mountopt')
 
     if g.detect:
-        descr += html_fmt_detect(g.detect)
+        descr += _html_selector_thing(g, 'detect')
 
     if g.tag:
-        descr += html_fmt_tag(g.tag)
+        descr += _html_selector_thing(g, 'tag')
 
-    # only display kernel, server, etc if there are more than one
+    if (len(report_selector.kernels) > 1 or
+        len(report_selector.clients) > 1 or
+        len(report_selector.servers) > 1 or
+        len(report_selector.paths) > 1):
+        descr += '<br>'
+
+    # only display kernel, server, etc if there are more than one in this
+    # report's view
     if len(report_selector.kernels) > 1:
-        descr += html_fmt_kernel(g.kernel)
+        descr += _html_selector_thing(g, 'kernel')
 
     if len(report_selector.clients) > 1:
-        descr += html_fmt_client(g.client)
+        descr += _html_selector_thing(g, 'client')
 
     if len(report_selector.servers) > 1:
-        descr += html_fmt_server(g.server)
+        descr += _html_selector_thing(g, 'server')
 
     if len(report_selector.paths) > 1:
-        descr += html_fmt_path(g.path)
+        descr += _html_selector_thing(g, 'path')
 
-    return descr
+    return """<div class="group_normal">%s</div>
+              <div class="group_detail" style="display: none;">%s</div>""" % \
+                (descr, g.html())
 
-def html_fmt_value(mean, std):
+def html_fmt_value(mean, std, units=None):
+
+    if units:
+        scale, units = fmt_scale_units(mean, units)
+        mean = mean / scale
+        std = std / scale
+
     fmt_mean = fmt_float(mean, 2)
     fmt_std = fmt_float(std, 2)
     if fmt_std != '0':
         fmt_mean += ' <span class="stddev">%s%s</span>' % \
                     (HTML_PLUSMINUS, fmt_std)
 
+    if units:
+        fmt_mean += ' <span class="units">%s</span>' % (units,)
+
     return fmt_mean
 
-def html_stat_info_id(sel, statbin_name, key=None):
-    r = [sel, statbin_name]
+def html_stat_info_id(sel, key=None):
+    r = [sel,]
     if key != None:
         r.append(key)
     r = repr(tuple(r)).replace(',', '_').replace("'", '')
@@ -101,223 +134,17 @@ def html_stat_info_id(sel, statbin_name, key=None):
     r = r.replace(' ', '')
     return r
 
-def fmt_cell_hits(report, value, cellstr):
-    classes = ('hatch_hit',)
-    if isinstance(value, Bucket):
-        values = [ x for x in value.foreach() ]
-        values.sort(lambda x,y: cmp(x.mean(), y.mean()))
-        out = [ get_legend_html(report, None, x.hatch_idx(), classes)
-                for x in values ]
-        cellstr += '<div class="cellhits">%s</div>' % ('\n'.join(out))
-    return cellstr
-
-def find_suffix(search, suffixes):
-    """
-        Split 'search' into (name, suffix)
-
-        suffixes - list of suffixes
-    """
-    for s in suffixes:
-        if search.endswith('_' + s):
-            idx = len(search) - len('_' + s)
-            return (search[:idx], search[idx+1:])
-    raise KeyError("key has invaid suffix: %r" % (search))
-
-
-class BucketDef:
-    """
-        Used to define buckets
-    """
-    def __init__(self, bucket2keys):
-        """
-            bucket2keys - a map of bucket name (str) -> list of keys (str)
-        """
-        self.bucket2keys = bucket2keys
-        self.key2bucket = {}
-        # make map of key -> bucket
-        for b, ks in bucket2keys.iteritems():
-            for k in ks:
-                self.key2bucket[k] = b
-
-    def has_suffix(self, search, suffixes):
-        try:
-            find_suffix(search, suffixes)
-        except:
-            return False
-        return True
-
-    def key_to_bucket(self, key, other_name, suffixes):
-        k, s = find_suffix(key, suffixes)
-        return '%s_%s' % (self.key2bucket.get(k, other_name), s)
-
-    def bucket_names(self, other_name, suffixes):
-        """ return all buckets """
-        r = []
-        for s in suffixes:
-            r.extend([ '%s_%s' % (x, s) for x in self.bucket2keys.keys()])
-        r.sort()
-        for s in suffixes:
-            r.append('%s_%s' % (other_name, s))
-        return r
-
-    def bucket_info(self, statbin_name, selection, report, widget,
-                    groups, keys, vals, other_name, suffixes):
-        descmap = {}
-        bettermap = {}
-        for b in self.bucket_names(other_name, suffixes):
-            desc = []
-            better = None
-
-            key2hatch = {}
-            for bucket in [ vals.get(g, {}).get(b) for g in groups ]:
-                if not bucket:
-                    continue
-                for stat in bucket.foreach():
-                    if not key2hatch.has_key(stat.name()):
-                        key2hatch[stat.name()] = stat.hatch_idx()
-                    else:
-                        assert key2hatch[stat.name()] == stat.hatch_idx()
-
-            # does ordering matter here?
-            bk_order = [ (k,v) for k, v in key2hatch.iteritems() ]
-            bk_order.sort(lambda x,y: cmp(x[1], y[1]))
-            bk_order = [ x[0] for x in bk_order ]
-
-            for bk in bk_order:
-                key, suffix = find_suffix(bk, suffixes)
-                bkidx = key2hatch[bk]
-                kdesc = report.collection.stat_description(statbin_name, bk)
-                legend = get_legend_html(report, None, bkidx, ('compare_ref',))
-                desc.append("""<tr>
-                                <td>%s</td>
-                                <td><b>%s</b></td>
-                                <td>%s</td>
-                               </tr>
-                            """ % (legend, key, kdesc))
-
-                # lookup better for this key
-                keybetter = report.collection.stat_better(statbin_name, bk)
-                if not better:
-                    better = keybetter
-                else:
-                    assert better == keybetter
-
-            desc = """<div class="hatch_legend">
-                       %s for group <i>%s</i>, containing:
-                       <table>%s</table>
-                      </div>""" % (widget.sub_desc, b, ''.join(desc))
-            descmap[b] = desc
-            bettermap[b] = better or BETTER_UNKNOWN
-
-        return descmap, bettermap
-
-
-nfsstat_bucket_def = BucketDef({
-  'Creation and Deletion':
-    ('create', 'open', 'open_conf', 'open_dgrd', 'mkdir', 'rmdir', 'remove',
-     'close', 'mknod',
-    ),
-
-  'File Metadata':
-    ('access', 'lookup', 'lookup_root', 'rename', 'link', 'readlink',
-     'symlink',
-    ),
-
-  'Readdir':
-    ('readdir', 'readdirplus',
-    ),
-
-  'Getattr and Setattr':
-    ('getattr', 'setattr',
-    ),
-
-  'FS Metadata':
-    ('fsstat', 'fsinfo', 'statfs',
-    ),
-
-  'Locks and Delegations':
-    ('lock', 'lockt', 'locku', 'rel_lkowner', 'delegreturn', 'get_lease_t',
-    ),
-
-  'Write':
-    ('write', 'commit', 'ds_write',
-    ),
-
-  'Read':
-    ('read',),
-
-  'PNFS':
-    ('getdevinfo', 'getdevlist', 'layoutget', 'layoutcommit', 'layoutreturn',
-    ),
-
-  'Getacl and Setacl':
-    ('getacl', 'setacl',
-    ),
-
-  'Session':
-    ('create_ses', 'destroy_ses', 'exchange_id',
-    ),
-})
-
-mountstat_bucket_def = BucketDef({
-  'Creation and Deletion':
-    ('CREATE', 'OPEN', 'MKDIR', 'RMDIR', 'REMOVE', 'CLOSE', 'OPEN_CONFIRM',
-     'OPEN_DOWNGRADE',
-    ),
-
-  'File Metadata':
-    ('ACCESS', 'LOOKUP', 'LOOKUP_ROOT', 'RENAME', 'LINK', 'READLINK',
-     'SYMLINK',
-    ),
-
-  'Readdir':
-    ('READDIR', 'READDIRPLUS',
-    ),
-
-  'Getattr and Setattr':
-    ('GETATTR', 'SETATTR',
-    ),
-
-  'FS Metadata':
-    ('FSSTAT', 'FSINFO', 'STATFS',
-    ),
-
-  'Locks and Delegations':
-    ('LOCK', 'LOCKT', 'LOCKU', 'RELEASE_LOCKOWNER', 'DELEGRETURN',
-     'GET_LEASE_TIME',
-    ),
-
-  'Write':
-    ('WRITE', 'COMMIT',
-    ),
-
-  'Read':
-    ('READ',
-    ),
-
-  'PNFS':
-    ('GETDEVICEINFO', 'GETDEVICELIST', 'LAYOUTGET', 'LAYOUTCOMMIT',
-     'LAYOUTRETURN',
-    ),
-
-  'Getacl and Setacl':
-    ('GETACL', 'SETACL',
-    ),
-
-  'Session':
-    ('CREATE_SESSION', 'DESTROY_SESSION', 'EXCHANGE_ID',
-    ),
-})
-
 class Table:
     """
         Basic Table
     """
-    def __init__(self, report, values, groups, keys, units, statbin_name,
+    def __init__(self, report, values, groups, keys, units,
                  nolegend=False,
                  fmt_key=None,
                  fmt_group=None,
                  fmt_cell=None,
+                 noheader=False,
+                 nolabels=False,
                  index_offset=0,
                  classes=None):
 
@@ -325,7 +152,6 @@ class Table:
 
         self.report = report
         self.values = values
-        self.statbin_name = statbin_name
 
         def _empty(x):
             if isinstance(x, str):
@@ -350,18 +176,37 @@ class Table:
         self.fmt_key = fmt_key
         self.fmt_cell = fmt_cell
         self.fmt_group = fmt_group
+        self.noheader = noheader
+        self.nolabels = nolabels
         self.index_offset = index_offset
 
-        self._classes = ['data',]
+        self._classes = []
 
         if classes:
             self._classes.extend(classes)
+
+        formatted_keys = {}
+        for k in self.keys:
+            formatted_keys[k] = self.html_key(k)
+        self.formatted_keys = formatted_keys
+
+        formatted_groups = {}
+        for g in self.groups:
+            formatted_groups[g] = self.html_group(g)
+        self.formatted_groups = formatted_groups
+
+        formatted_cells = {}
+        for g in self.groups:
+            for k in self.keys:
+                formatted_cells[(g, k)] = self.html_cell(g, k)
+        self.formatted_cells = formatted_cells
 
     def classes(self):
         return ' '.join(self._classes)
 
     def html_key(self, k):
         """ return key formatted for html """
+
         if self.fmt_key:
             return self.fmt_key(k)
         return k
@@ -370,7 +215,7 @@ class Table:
         """ return group formatted for html """
         # add legend
         legend = '<input type="hidden" name="pane_id" value="%s"></input>' % \
-                   (html_stat_info_id(g, self.statbin_name),)
+                   (html_stat_info_id(g),)
         if not self.nolegend:
             group_idx = self.groups.index(g)
             cidx = color_idx(group_idx) + self.index_offset
@@ -392,11 +237,9 @@ class Table:
         if isinstance(val, str):
             cell = val
         elif isinstance(val, (Stat, Bucket)):
-            cell = html_fmt_value(val.mean(), val.std())
-            if self.units:
-                cell += ' <span class="units">%s</span>' % (self.units,)
+            cell = html_fmt_value(val.mean(), val.std(), units=self.units)
         else:
-            assert val == None
+            assert val == None, "Not a string, Stat or Bucket: %r\ng = %s, k = %s" % (val, g, k)
 
         if cell == None:
             cell = HTML_NO_DATA
@@ -424,47 +267,34 @@ class WideTable:
     """
         A collection of tables, where groups are split out by nfs proto version
     """
-    def __init__(self, report, values, groups, gmap, keys, units, statbin_name,
+    def __init__(self, report, values, groups, gmap, keys, units,
                  nolegend=False,
                  fmt_key=None,
                  fmt_group=None,
                  fmt_cell=None):
 
         self.tables = []
-        self.statbin_name = statbin_name
 
-        if len(groups) <= WIDE_DATA_THRESHOLD:
+        num = len(groups)
+        cur = 0
 
-            new = Table(report, values, groups, keys, units, self.statbin_name,
+        for vers in NFS_VERSIONS:
+            if not gmap.has_key(vers):
+                continue
+
+            assert cur < num
+            new = Table(report, values, gmap[vers], keys, units,
                     nolegend=nolegend,
                     fmt_key=fmt_key,
                     fmt_group=fmt_group,
-                    fmt_cell=fmt_cell)
+                    fmt_cell=fmt_cell,
+                    index_offset=cur,
+                    classes=['data', 'data_table_%s' % vers])
 
+            cur += len(gmap[vers])
             self.tables.append(new)
 
-        else:
-            num = len(groups)
-            cur = 0
-
-            for vers in NFS_VERSIONS:
-                if not gmap.has_key(vers):
-                    continue
-
-                assert cur < num
-                new = Table(report, values, gmap[vers], keys, units,
-                        self.statbin_name,
-                        nolegend=nolegend,
-                        fmt_key=fmt_key,
-                        fmt_group=fmt_group,
-                        fmt_cell=fmt_cell,
-                        index_offset=cur,
-                        classes=['data_table_%s' % vers])
-
-                cur += len(gmap[vers])
-                self.tables.append(new)
-
-            assert cur == num
+        assert cur == num
 
     def html(self):
         r = '</td><td>'.join([ x.html() for x in self.tables])
@@ -532,218 +362,416 @@ class Dataset:
     """
         Dataset - title, description, image, tables
     """
-    def __init__(self, selection, widget, title, statbin_name, units,
-                 groups, keys, vals, toc, report,
+    def __init__(self, selection, widget, title, units,
+                 groups, key, vals, toc, report,
                  no_graph=False, no_title=False,
-                 key_desc=None, bettermap=None,
-                 tall_cell=False, subtitle='', graph_ignore_keys=None,
-                 anchor=None, fmt_key=None, fmt_cell=None, fmt_group=None):
+                 tall_cell=False, subtitle='',
+                 anchor=None, fmt_key=None, fmt_cell=None, fmt_group=None,
+                 bucket_def=None):
         """ generate the "dataset" - a graph and a table  """
-        self.keys = keys
+        self.key = key
         self.subtitle = subtitle
-        self.statbin_name = statbin_name
         self.anchor = anchor
-        self.key_desc = key_desc
         self.selection = selection
-        self.bettermap = bettermap
         self.report = report
+        self.fmt_key = fmt_key
+        self.fmt_cell = fmt_cell
+        self.fmt_group = fmt_group
+        self.bucket_def = bucket_def
+
+        if not self.fmt_key:
+            self.fmt_key = lambda x: x
+
+        self.hatch_map, bucket_to_value, total_value = \
+            self.make_hatch_map(vals, groups, key)
+
+        # XXX ugly
+        self.all_buckets = None
+        value_map = {}
+        for i, g in enumerate(groups):
+            value_map[g] = {}
+            v = vals.get(g, {}).get(key, None)
+            if v != None:
+                if isinstance(v, Bucket):
+                    self.all_buckets = True
+                    for stat in v.foreach():
+                        value_map[g][stat.name] = stat.mean()
+                else:
+                    self.all_buckets = False
+                    value_map[g][key] = v.mean()
+                    break
+
+        self.bucket_legend = ''
+        self.bucket_pie = ''
+
+        # does ordering matter here?
+        bk_order = [ (k,v) for k, v in self.hatch_map.iteritems() ]
+        bk_order.sort(lambda x,y: cmp(x[1], y[1]))
+
+        table_values = {}
+        bucket_names = []
+        for bucket_name, hatch_idx in bk_order:
+            display_key = bucket_name
+            if self.bucket_def:
+                display_key = self.bucket_def.key_display(display_key)
+            display_key = self.fmt_key(display_key)
+            table_values[bucket_name] = {
+             'description':
+                self.report.collection.stat_description(bucket_name),
+             'legend':
+                get_legend_html(self.report, None, hatch_idx, ('cmp_ref',)),
+             'pct': '%0.1f' % pct_f(bucket_to_value[bucket_name],
+                                    total_value),
+             'display_key': display_key,
+            }
+            bucket_names.append(bucket_name)
+
+        tbl = Table(self.report, table_values, bucket_names,
+                    ('legend', 'display_key', 'description', 'pct'),
+                    '', nolegend=True, noheader=True, nolabels=True)
+        self.bucket_legend = tbl.html()
+
+        if ENABLE_PIE_GRAPHS and len(bk_order) > 1:
+            pie_values = []
+            pie_colors = []
+            pie_hatches = []
+
+            for bucket_name, hatch_idx in bk_order:
+                total = 0.0
+                for g in groups:
+                    total += value_map[g].get(bucket_name, 0.0)
+
+                pie_values.append(total)
+                pie_colors.append('#ffffff')
+                pie_hatches.append(get_hatch(hatch_idx))
+
+            pie_scale = 0.3 * float(len(pie_values))
+
+            pie_attrs = {
+                'graph_width': pie_scale,
+                'graph_height': pie_scale,
+                'slice_labels': [''] * len(pie_values),
+                'slice_colors': pie_colors,
+                'slice_values': pie_values,
+                'slice_explode': [0.0] * len(pie_values),
+                'slice_hatches': pie_hatches,
+                'classes': ('legend_pie',),
+            }
+            self.bucket_pie = report.graphs.make_graph('pie', pie_attrs)
 
         self.toc = toc.add(title)
 
-        graph_ignore_keys = set(graph_ignore_keys)
-        graph_keys = [ k for k in keys if not k in graph_ignore_keys ]
-
         no_ylabel = False
-        if report.comparison:
-            tablevals = self.make_comparison_vals(vals, keys, groups,
-                                      report.comparison)
-            no_ylabel = True
-            units = ''
-        else:
-            tablevals = vals
+
+        # make comparison values
+        self.comparison_vals_map = {}
+
+        select_order = ('mountopt', 'detect', 'tag')
+        self.comparison_vals_map['config'] = \
+            self.make_comparison_vals(vals, key, groups, select_order)
+
+        select_order = ('mountopt',)
+        self.comparison_vals_map['mountopt'] = \
+            self.make_comparison_vals(vals, key, groups, select_order)
+
+        select_order = ('detect',)
+        self.comparison_vals_map['detect'] = \
+            self.make_comparison_vals(vals, key, groups, select_order)
+
+        select_order = ('tag',)
+        self.comparison_vals_map['tag'] = \
+            self.make_comparison_vals(vals, key, groups, select_order)
 
         self.gmap = groups_by_nfsvers(groups)
         self.nfs_versions = [ v for v in NFS_VERSIONS if self.gmap.has_key(v) ]
 
-        self.tab = WideTable(report, tablevals, groups, self.gmap, keys, units,
-                    self.statbin_name,
-                    fmt_key=fmt_key, fmt_cell=fmt_cell,
+        # ensure the order of groups is in nfs_version order
+        groups = []
+        for v in self.nfs_versions:
+            groups.extend(self.gmap[v])
+
+        self.color_map = {}
+        for i, g in enumerate(groups):
+            self.color_map[g] = COLORS[color_idx(i)]
+
+
+
+        self.tab = WideTable(report, vals, groups, self.gmap, [key],
+                    units,
+                    fmt_key=fmt_key, fmt_cell=self.fmt_cell_modes,
                     fmt_group=fmt_group)
 
-        self.infos = []
-        info_pane_template = html_template(TEMPLATE_DATAINFOPANE)
-        for gidx, g in enumerate(groups):
-            for k in keys:
-                stat = vals[g].get(k, None)
-                out = info_pane_template.render(
-                           report=report,
-                           selection=g,
-                           stat=stat,
-                           color_idx=color_idx(gidx),
-                           pane_id=html_stat_info_id(g, self.statbin_name, k),
-                           mean_f=np.mean,
-                           fmt_float=fmt_float,
-                           get_legend_html=get_legend_html,
-                           bucket_type=Bucket)
-                self.infos.append(out)
-
-
-        # small graphs
-        graph_height = max(0.5 * len(groups), 0.7 * len(keys))
-        if graph_height > 1.5:
-            graph_height = 1.5
-        graph_width = 3.0
-
-        self.wide_data = False
-        # if more than N bars, it's a large graph
-        if len(groups) > WIDE_DATA_THRESHOLD:
-            graph_height = 1.5
-            graph_width = 8.0
-            self.wide_data = True
+        graph_height = 2.0
+        graph_width = 8.0
 
         # Graph section
-        self.graph_tag = ''
+        self.graph_html = ''
         if not self.empty() and not no_graph:
             graph_attrs = {
                 'units':        units,
-                'vals':         vals,
+                'key':          key,
                 'groups':       groups,
-                'keys':         graph_keys,
+                'gmap':         self.gmap,
                 'no_ylabel':    no_ylabel,
                 'graph_width':  graph_width,
                 'graph_height': graph_height,
-                'group_offset': 0,
-                'group_total':  len(groups),
                 'classes':      ('data_graph',),
-                'report':       report.title,
-                'widget':       widget,
                 'selection':    selection,
-                'statbin':      statbin_name,
-                'toc':          self.toc.section,
+                'hatch_map':    self.hatch_map,
+                'color_map':    self.color_map,
             }
 
-            self.graph_tag = report.graphs.make_graph('bar_and_nfsvers',
-                                                      graph_attrs)
+            self.graph_html = report.graphs.make_graph('bar_and_nfsvers',
+                                                       graph_attrs)
 
+        binfo = self.report.collection.get_better_info(selection, key)
+        self.better_sym = binfo[0]
+        self.better_str = binfo[1]
+        self.better_more = binfo[2]
+
+
+        self.description = self.report.collection.stat_description(key)
+
+        if not self.description:
+            self.description = ''
+
+
+    def fmt_cell_modes(self, g, k, v, c):
+        if self.fmt_cell:
+            c = self.fmt_cell(g, k, v, c)
+
+        hits = self.fmt_cell_hits(v[g].get(k, None))
+
+        c = '<div class="compare_averages">%s</div>' % (c,)
+
+        if hits:
+            c += '<div class="compare_hits" ' \
+                 ' style="display: none;">%s</div>' % (hits,)
+
+
+        for compare, compvals in self.comparison_vals_map.iteritems():
+            if compvals:
+                c += '<div class="compare_%s" ' \
+                     'style="display: none;">' \
+                     '<div>%s</div></div>' % (compare, compvals[g][k])
+
+
+        stat = v[g].get(k, None)
+        info_html = ''
+        if stat:
+            table_hdrs = []
+            table_rows = []
+            color_idx = COLORS.index(self.color_map[g])
+
+            if isinstance(stat, Bucket):
+                table_hdrs.append('run')
+                for x in stat.foreach():
+                    hidx = self.hatch_map[x.name]
+                    hdr = get_legend_html(self.report, color_idx, hidx,
+                                          classes=('data_info_hatch',))
+                    hdr += '<br>%s' % self.fmt_key(self.bucket_def.key_display(x.name))
+                    table_hdrs.append(hdr)
+                table_hdrs.append('total')
+
+            else:
+                table_hdrs.append('run')
+                hdr = get_legend_html(self.report, color_idx, 0,
+                                      classes=('data_info_hatch',))
+                hdr += '<br>' + stat.name
+                table_hdrs.append(hdr)
+
+
+            for run, tracedir in enumerate(stat.tracedirs()):
+                row = []
+                row.append('<a href="%s">%s</a>' % (tracedir, run))
+
+                if isinstance(stat, Bucket):
+                    for x in stat.foreach():
+                        row.append('<a href="%s/%s">%s</a>' %
+                            (tracedir, stat.filename(),
+                             fmt_float(x.run_value(tracedir, None))))
+                    row.append(fmt_float(stat.run_total(tracedir)))
+                else:
+                    row.append('<a href="%s/%s">%s</a>' %
+                        (tracedir, stat.filename(),
+                         fmt_float(stat.run_value(tracedir, None))))
+
+                table_rows.append(row)
+
+            info_html = html_template(TEMPLATE_DATAINFOPANE).render(
+                   table_hdrs=table_hdrs,
+                   table_rows=table_rows,
+                   avg=fmt_float(stat.mean()),
+                   std=fmt_float(stat.std()))
+
+        c += '<div class="compare_rundata" style="display: none;">%s</div>' % info_html
+
+        return c
     def empty(self):
         return self.tab.empty()
 
-    def legend_key_html(self, k):
-        description = \
-            self.report.collection.stat_description(self.statbin_name, k,
-                                                    descmap=self.key_desc)
-        if not description:
-            return ''
+    def make_hatch_map(self, values, groups, key):
+        # calc magnitude of each key across ALL groups for ordering
+        key2val = {}
+        total_val = 0.0
+        for g in groups:
+            stat = values[g].get(key, None)
+            if stat == None:
+                continue
 
-        binfo = self.report.collection.get_better_info(self.selection,
-                                self.statbin_name, k, bettermap=self.bettermap)
+            if isinstance(stat, Bucket):
+                for sub in stat.foreach():
+                    if not key2val.has_key(sub.name):
+                        key2val[sub.name] = 0.0
+                    key2val[sub.name] += sub.mean()
+                    total_val += sub.mean()
+            else:
+                # a basic Stat - makes hatch map with one entry
+                if not key2val.has_key(stat.name):
+                    key2val[stat.name] = 0.0
+                key2val[stat.name] += stat.mean()
+                total_val += stat.mean()
 
-        template = html_template(TEMPLATE_DATASET_LEGEND_KEY)
-        return template.render(description=description,
-                               better_sym=binfo[0],
-                               better_str=binfo[1],
-                               better_more=binfo[2])
+        ordered = [ (k, v) for k, v in key2val.iteritems() ]
+        ordered.sort(lambda x,y: cmp(x[1], y[1]))
+        ordered.reverse()
 
+        k2h = {}
+        for i, kv in enumerate(ordered):
+            assert not k2h.has_key(kv[0])
+            k2h[kv[0]] = i
+
+        return k2h, key2val, total_val
 
     def html(self):
         template = html_template(TEMPLATE_DATASET)
         return template.render(dataset=self)
 
-    def make_comparison_vals(self, vals, keys, groups, comparison):
+    def make_comparison_vals(self, vals, key, groups, select_order):
         newvals = {}
 
-        compare_type = comparison.lower()
-        assert compare_type in SELECTOR_ORDER
+        #select_order = ('mountopt', 'detect', 'tag')
 
-        select_order = list(SELECTOR_ORDER)
-        select_order.remove(compare_type)
+        compare_groups = []
+        for g in groups:
+            idx = None
+            for i, cg in enumerate(compare_groups):
+                if g.compare_order(cg[0], select_order) == 0:
+                    # found a group!
+                    idx = i
+                    break
 
-        group_spans = []
-
-        cur_span = []
-        for i, g in enumerate(groups):
-            if cur_span:
-                if g.compare_order(cur_span[0], select_order) == 0:
-                    cur_span.append(g)
-                else:
-                    group_spans.append(tuple(cur_span))
-                    cur_span = [ g ]
+            if idx != None:
+                compare_groups[idx].append(g)
+            # new group
             else:
-                cur_span.append(g)
-        if cur_span:
-            group_spans.append(tuple(cur_span))
+                compare_groups.append([g,])
 
-        for key in keys:
-            for span in group_spans:
-                ref_val = None
-                ref_g = None
-                for g in span:
-                    if not newvals.has_key(g):
-                        newvals[g] = {}
+        for cg in compare_groups:
+            ref_val = None
+            ref_g = None
+            for g in cg:
+                if not newvals.has_key(g):
+                    newvals[g] = {}
 
-                    # handle no data
-                    v = vals[g].get(key, None)
-                    if v == None:
-                        newvals[g][key] = HTML_NO_DATA
-                        continue
+                # handle no data
+                v = vals[g].get(key, None)
+                if v == None:
+                    newvals[g][key] = HTML_NO_DATA
+                    continue
 
-                    # handle zero
-                    if v.empty():
-                        newvals[g][key] = HTML_COMPARISON_ZERO
-                        continue
+                # handle zero
+                if v.empty():
+                    newvals[g][key] = HTML_COMPARISON_ZERO
+                    continue
 
-                    # if something has data there better be a reference point
-                    if not ref_val:
-                        ref_val = v
-                        ref_g = g
-                        vstr = get_legend_html(self.report,
-                                               groups.index(g), None,
-                                               ('compare_ref',))
-                        vstr = fmt_cell_hits(self.report, v, vstr)
-                        newvals[g][key] = vstr
-                        continue
-
-                    # handle: has data, not reference point
-                    def pct_f(x, y):
-                        if y == 0.0:
-                            raise Exception('Zero Division')
-                            return 0.0
-                        pct = (float(x) / float(y)) * 100.0
-                        return pct
-
-                    diff_mean = pct_f(v.mean() - ref_val.mean(), ref_val.mean())
-                    diff_std = sqrt((pow(ref_val.std(),2) + pow(v.std(),2))/2.0)
-                    diff_std = pct_f(diff_std, ref_val.mean())
-
-                    operator = '-'
-                    if diff_mean >= 0.0:
-                       operator = '+'
-
-                    diff_val_str = '%0.2f' % abs(diff_mean)
-                    diff_std_str = '%0.2f' % abs(diff_std)
-
-                    ref_idx = groups.index(ref_g)
-                    if diff_val_str == '0.00' and diff_std_str == '0.00':
-                        operator = '='
-                        vstr = '<div class="compare_op">%s</div>%s' % \
-                            (operator,
-                             get_legend_html(self.report,
-                                ref_idx, None, ('compare_ref',)))
-                    else:
-                        cell = html_fmt_value(abs(diff_mean), abs(diff_std))
-                        vstr = """%s<div class="compare_op">%s</div>
-                                  <div class="compare_value">%s%%</div>""" % \
-                            (get_legend_html(self.report,
-                                ref_idx, None, ('compare_ref',)),
-                             operator, cell)
-
-                    vstr = fmt_cell_hits(self.report, v, vstr)
+                # find reference point
+                if not ref_val:
+                    ref_val = v
+                    ref_g = g
+                    vstr = get_legend_html(self.report,
+                                           groups.index(g), None,
+                                           ('cmp_ref',))
                     newvals[g][key] = vstr
+                    continue
+
+                diff_mean = pct_f(v.mean() - ref_val.mean(), ref_val.mean())
+                diff_std = sqrt((pow(ref_val.std(),2) + pow(v.std(),2))/2.0)
+                diff_std = pct_f(diff_std, ref_val.mean())
+
+                operator = '-'
+                if diff_mean >= 0.0:
+                   operator = '+'
+
+                diff_val_str = '%0.2f' % abs(diff_mean)
+                diff_std_str = '%0.2f' % abs(diff_std)
+
+                ref_idx = groups.index(ref_g)
+                if diff_val_str == '0.00' and diff_std_str == '0.00':
+                    operator = '='
+                    vstr = '<div class="cmp_op">%s</div>%s' % \
+                        (operator,
+                         get_legend_html(self.report,
+                            ref_idx, None, ('cmp_ref',)))
+                else:
+                    cell = html_fmt_value(abs(diff_mean), abs(diff_std))
+                    vstr = """%s<div class="cmp_op">%s</div>
+                              <div class="cmp_values">%s%%</div>""" % \
+                        (get_legend_html(self.report,
+                            ref_idx, None, ('cmp_ref',)),
+                         operator, cell)
+
+                newvals[g][key] = vstr
 
         return newvals
 
-    def make_heading(self, worklgad, widget_name, dataset_name):
-        return ' - '.join((workload, widget_name, dataset_name))
+    def fmt_cell_hits(self, value):
+        classes = ('hatch_hit',)
+        if isinstance(value, Bucket):
+            stat_list = [ x for x in value.foreach() ]
+            stat_list.sort(lambda x,y: -1 * cmp(x.mean(), y.mean()))
+
+            units = self.report.collection.stat_units(value.name)
+
+            pie_html = ''
+            if ENABLE_PIE_GRAPHS and len(stat_list) > 1:
+                pie_values = [ x.mean() for x in stat_list ]
+                pie_attrs = {
+                    'graph_width': 0.8,
+                    'graph_height': 0.8,
+                    'slice_labels': [''] * len(stat_list),
+                    'slice_colors': ['#ffffff'] * len(stat_list),
+                    'slice_values': pie_values,
+                    'slice_explode': [0.0] * len(stat_list),
+                    'slice_hatches': [ get_hatch(self.hatch_map[x.name])
+                                       for x in stat_list ],
+                    'classes': ('breakdown_pie',),
+                }
+                pie_html = self.report.graphs.make_graph('pie', pie_attrs)
+
+            out = [pie_html + '<table>']
+
+            total = sum([ x.mean() for x in stat_list ])
+            for stat in stat_list:
+                legend = get_legend_html(self.report, None,
+                                         self.hatch_map[stat.name], classes)
+                fmt = html_fmt_value(stat.mean(), stat.std(), units=units)
+                if value.mean():
+                    pct = (stat.mean() / total) * 100.0
+                else:
+                    pct = 0.0
+                out.append('<tr><td>%0.2f%%</td><td>%s</td><td>%s</td></tr>' % \
+                           (pct, legend, fmt))
+
+            fmt = html_fmt_value(total, 0, units=units)
+            out.append('<tr><td></td><td>total</td><td>%s</td></tr>' % \
+                       (fmt,))
+
+            out.append('</table>')
+
+            return '<div class="cellhits">%s</div>' % ('\n'.join(out))
+        return ''
+
 
 #
 # WIDGETS
@@ -752,7 +780,6 @@ class Widget:
     def __init__(self, collection, selection, report, toc):
         assert self.widget
         assert self.desc
-        assert self.statbin_name
 
         self.collection = collection
         self.selection = selection
@@ -770,134 +797,23 @@ class Widget:
     def setup(self):
         raise NotImplemented
 
-    def get_stat_file(self):
-        return self.collection.get_stat_file(self.statbin_name)
-
-    def gather_data(self, keys):
-        groups = []
-        vals = {}
-
-        # XXX
-        order = ['workload', 'client', 'server', 'mountopt', 'detect', 'tag', 'kernel', 'path']
-        if self.report.comparison:
-            compare_type = self.report.comparison.lower()
-            order.remove(compare_type)
-            order.append(compare_type)
-
-        for subsel in self.selection.foreach(order):
-            assert not vals.has_key(subsel)
-            vals[subsel] = {}
-
-            try:
-                tracestat = self.collection.get_trace(subsel)
-            except KeyError:
-                continue
-
-            for k in keys:
-                vals[subsel][k] = tracestat.get_stat(self.statbin_name, k)
-
-            groups.append(subsel)
-
-        return groups, vals
-
-    def gather_buckets(self, keys):
-        groups = []
-        vals = {}
-
-        order = ['workload', 'client', 'server', 'mountopt', 'detect', 'tag', 'kernel', 'path']
-        if self.report.comparison:
-            compare_type = self.report.comparison.lower()
-            order.remove(compare_type)
-            order.append(compare_type)
-
-        for subsel in self.selection.foreach(order):
-            assert not vals.has_key(subsel)
-            vals[subsel] = {}
-
-            try:
-                tracestat = self.collection.get_trace(subsel)
-            except KeyError:
-                continue
-
-            # add all values together for each bucket
-            # this adds per-run since value arrays are in run load order
-            for k in keys:
-                new = tracestat.get_stat(self.statbin_name, k)
-
-                if not new:
-                    continue
-
-                b = self.bucket_def.key_to_bucket(k, self.other_name,
-                                                  self.suffixes)
-
-                if not vals[subsel].has_key(b):
-                    suf = find_suffix(b, self.suffixes)[1]
-                    vals[subsel][b] = Bucket(b, suf)
-
-                vals[subsel][b].add_stat(new)
-
-            groups.append(subsel)
-
-        bucket_names = self.bucket_def.bucket_names(self.other_name,
-                                                    self.suffixes)
-        self.post_process_hatch_idx(vals, groups, bucket_names)
-
-        return groups, vals
-
-    def post_process_hatch_idx(self, values, groups, bucket_names):
-        for b in bucket_names:
-            # calc magnitude of each key across ALL groups for ordering
-            key2val = {}
-            for g in groups:
-                bucket = values[g].get(b, None)
-                if not bucket:
-                    continue
-                for stat in bucket.foreach():
-                    if not key2val.has_key(stat.name()):
-                        key2val[stat.name()] = 0.0
-                    key2val[stat.name()] += stat.mean()
-
-            key2val = [ (k, v) for k, v in key2val.iteritems() ]
-            key2val.sort(lambda x,y: cmp(x[1], y[1]))
-            key2val.reverse()
-
-            k2h = {}
-            for i, kv in enumerate(key2val):
-                assert not k2h.has_key(kv[0])
-                k2h[kv[0]] = i
-
-            for g in groups:
-                v = values[g].get(b)
-                if v:
-                    v.assign_hatch_indices(k2h)
-
-    def new_dataset(self, selection, title, groups, keys, vals, **kwargs):
-        ignore_keys=kwargs.get('graph_ignore_keys', set())
-
+    def new_dataset(self, selection, title, groups, key, vals, **kwargs):
         collection = self.report.collection
 
-        units = kwargs.get('units', '') 
+        units = kwargs.get('units', collection.stat_units(key))
 
-        if units:
+        try:
             del kwargs['units']
-        else:
-            for k in keys:
-                if k in ignore_keys:
-                    continue
-                this = collection.stat_units(self.statbin_name, k)
-                if not units:
-                    units = this
-                else:
-                    assert units == this, \
-                        'units mismatch! statbin: %s, keys: %s' % \
-                            (self.statbin_name, keys)
+        except:
+            pass
 
-        kwargs['graph_ignore_keys'] = ignore_keys
         if not 'fmt_group' in kwargs:
             kwargs['fmt_group'] = html_fmt_group
 
-        new = Dataset(selection, self.widget, title, self.statbin_name,
-                      units, groups, keys, vals, self.toc, self.report,
+        kwargs['fmt_key'] = strip_key_prefix
+
+        new = Dataset(selection, self.widget, title,
+                      units, groups, key, vals, self.toc, self.report,
                       **kwargs)
 
         if not new.empty():
@@ -914,360 +830,302 @@ class Widget:
 
 
 class SimpleWidget(Widget):
+    ds_info = None
+    bucket_table_html = ''
+    bucket_pie_html = ''
+
     def __init__(self, collection, selection, report, toc):
         assert len(self.ds_info)
 
         self.keys = set()
-        for t, keys in self.ds_info:
-            if not isinstance(keys, (tuple, list, set)):
-                keys = [ keys ]
-            for k in keys:
-                if k in self.keys:
-                    raise ValueError("key %s already used in ds_info" % k)
-                self.keys.add(k)
+        for t, key in self.ds_info:
+            if key in self.keys:
+                raise ValueError("key %s already used in ds_info" % k)
+            self.keys.add(key)
 
         self.keys = tuple(self.keys)
 
         Widget.__init__(self, collection, selection, report, toc)
 
     def setup(self):
-        groups, vals = self.gather_data(self.keys)
-        for t, keys in self.ds_info:
-            if not isinstance(keys, (tuple, list, set)):
-                keys = [ keys ]
-            self.new_dataset(self.selection, t, groups, keys, vals)
+        groups, vals = self.collection.gather_data(self.keys, self.selection)
+
+        for t, key in self.ds_info:
+            self.new_dataset(self.selection, t, groups, key, vals)
 
 class Widget_RunTimes(SimpleWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = 'Times'
-        self.desc =   """ Run times of workload as measured by time(1).
-                      """
-        self.statnotes = [statnote_filebench_times]
-        self.statbin_name =   'times'
+    widget = 'Times'
+    desc = 'Run times of workload as measured by time(1)'
+    statnotes = (statnote_filebench_times,)
 
-        self.ds_info = (
-            ('Real Time', 'time_real'),
-            ('Sys Time',  'time_sys'),
-            ('User Time', 'time_user'),
-        )
-
-        SimpleWidget.__init__(self, collection, selection, report, toc)
-
+    ds_info = (
+        ('Trace Time', 'times:time_trace'),
+        ('Other Time', 'times:time_other'),
+        ('Real Time',  'times:time_real'),
+        ('Sys Time',   'times:time_sys'),
+        ('User Time',  'times:time_user'),
+    )
 
 class Widget_Filebench(SimpleWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = "Filebench"
-        self.desc =  "Stats collected from the Filebench test suite output."
-        self.statbin_name =  'filebench'
+    widget = 'Filebench'
+    desc = 'Stats collected from the Filebench test suite output.'
 
-        self.ds_info = (
-            ('Operation count',   'op_count'),
-            ('Operations/second', 'ops_per_second'),
-            ('MB/second',         'mb_per_second'),
-            ('CPU/Operation',     'cpu_per_op'),
-            ('Latency',           'latency_ms'),
-        )
-
-        SimpleWidget.__init__(self, collection, selection, report, toc)
+    ds_info = (
+        ('Operation count',   'filebench:op_count'),
+        ('Operations/second', 'filebench:ops_per_second'),
+        ('MB/second',         'filebench:mb_per_second'),
+        ('CPU/Operation',     'filebench:cpu_per_op'),
+        ('Latency',           'filebench:latency_ms'),
+    )
 
 class Widget_NfsBytes(SimpleWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = "Bytes"
-        self.desc =  """ Bytes read and written by syscalls
-                         (normal and O_DIRECT) and NFS operations.
-                     """
-        self.statbin_name =  'mountstats'
+    widget = 'Bytes'
+    desc = 'Bytes read and written by syscalls (normal and O_DIRECT) ' \
+           'and NFS operations.'
 
-        self.ds_info = (
-            ('Read Syscalls',           'read_normal'),
-            ('Write Syscalls',          'write_normal'),
-            ('O_DIRECT Read Syscalls',  'read_odirect'),
-            ('O_DIRECT Write Syscalls', 'write_odirect'),
-            ('Read NFS calls',          'read_nfs'),
-            ('Write NFS calls',         'write_nfs'),
-        )
-
-        SimpleWidget.__init__(self, collection, selection, report, toc)
+    ds_info = (
+        ('Read Syscalls',           'mountstats:read_normal'),
+        ('Write Syscalls',          'mountstats:write_normal'),
+        ('O_DIRECT Read Syscalls',  'mountstats:read_odirect'),
+        ('O_DIRECT Write Syscalls', 'mountstats:write_odirect'),
+        ('Read NFS calls',          'mountstats:read_nfs'),
+        ('Write NFS calls',         'mountstats:write_nfs'),
+    )
 
 class Widget_RpcCounts(SimpleWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = "RPC"
-        self.desc =  """ RPC message counts """
-        self.statbin_name =  'nfsstats'
+    widget = 'RPC'
+    desc = 'RPC message counts'
 
-        self.ds_info = (
-            ('Calls', 'rpc_calls'),
-        )
-
-        SimpleWidget.__init__(self, collection, selection, report, toc)
+    ds_info = (
+        ('Calls', 'nfsstats:rpc_calls'),
+    )
 
 # XXX not used?
 class Widget_RpcStats(SimpleWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = "RPC"
-        self.desc =  """ RPC message counts """
-        self.statnotes = [statnote_v3_no_lock, statnote_v41_pnfs_no_ds]
-        self.statbin_name =  'mountstats'
+    widget = 'RPC'
+    desc =  'RPC message counts'
+    statnotes = (statnote_v3_no_lock, statnote_v41_pnfs_no_ds)
 
-        self.ds_info = (
-            ('RPC Requests', 'rpc_requests'),
-            ('RPC Replies',  'rpc_requests'),
-        )
-
-        # TODO: Add to sanity check like if xid_not_found is really big
-        #'xid_not_found',
-        #'backlog_queue_avg',
-
-        SimpleWidget.__init__(self, collection, selection, report, toc)
+    #'xid_not_found',
+    #'backlog_queue_avg',
+    ds_info = (
+        ('RPC Requests', 'mountstats:rpc_requests'),
+        ('RPC Replies',  'mountstats:rpc_requests'),
+    )
 
 class Widget_MaxSlots(SimpleWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = "Max Slots"
-        self.desc =  """ Max slots used for rpc transport """
-        self.statbin_name =  'proc_mountstats'
+    widget = 'Max Slots'
+    desc = 'Max slots used for rpc transport'
 
-        self.ds_info = (
-            ('Max Slots', 'xprt_max_slots'),
-        )
-
-        SimpleWidget.__init__(self, collection, selection, report, toc)
+    ds_info = (
+        ('Max Slots', 'proc_mountstats:xprt_max_slots'),
+    )
 
 class Widget_Nfsiostat(SimpleWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = 'Throughput'
-        self.desc =  'Throughput statistics'
-        self.statnotes = [statnote_v41_pnfs_no_ds]
-        self.statbin_name =  'nfsiostat'
+    widget = 'Throughput'
+    desc =  'Throughput statistics'
+    statnotes = [statnote_v41_pnfs_no_ds]
 
-        self.ds_info = (
-            ('Read KB/s',                      'read_kb_per_sec'),
-            ('Write KB/s',                     'write_kb_per_sec'),
-            ('Read Operations/s',              'read_ops_per_sec'),
-            ('Write operations/s',             'write_ops_per_sec'),
-            ('Read Average KB per Operation',  'read_kb_per_op'),
-            ('Write Average KB per Operation', 'write_kb_per_op'),
-            ('Read Average RTT',               'read_avg_rtt_ms'),
-            ('Write Average RTT',              'write_avg_rtt_ms'),
-        )
-
-        SimpleWidget.__init__(self, collection, selection, report, toc)
+    ds_info = (
+        ('Read KB/s',                      'nfsiostat:read_kb_per_sec'),
+        ('Write KB/s',                     'nfsiostat:write_kb_per_sec'),
+        ('Read Operations/s',              'nfsiostat:read_ops_per_sec'),
+        ('Write operations/s',             'nfsiostat:write_ops_per_sec'),
+        ('Read Average KB per Operation',  'nfsiostat:read_kb_per_op'),
+        ('Write Average KB per Operation', 'nfsiostat:write_kb_per_op'),
+        ('Read Average RTT',               'nfsiostat:read_avg_rtt_ms'),
+        ('Write Average RTT',              'nfsiostat:write_avg_rtt_ms'),
+    )
 
 class Widget_VfsEvents(SimpleWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = 'VFS Events'
-        self.desc =  'Event counters from the VFS layer'
-        self.statbin_name =  'proc_mountstats'
+    widget = 'VFS Events'
+    desc =  'Event counters from the VFS layer'
 
-        self.ds_info = (
-            ('Open',       'vfs_open'),
-            ('Lookup',     'vfs_lookup'),
-            ('Access',     'vfs_access'),
-            ('Updatepage', 'vfs_updatepage'),
-            ('Readpage',   'vfs_readpage'),
-            ('Readpages',  'vfs_readpages'),
-            ('Writepage',  'vfs_writepage'),
-            ('Writepages', 'vfs_writepages'),
-            ('Getdents',   'vfs_getdents'),
-            ('Setattr',    'vfs_setattr'),
-            ('Flush',      'vfs_flush'),
-            ('Fsync',      'vfs_fsync'),
-            ('Lock',       'vfs_lock'),
-            ('Release',    'vfs_release'),
-        )
-
-        SimpleWidget.__init__(self, collection, selection, report, toc)
+    ds_info = (
+        ('Open',       'proc_mountstats:vfs_open'),
+        ('Lookup',     'proc_mountstats:vfs_lookup'),
+        ('Access',     'proc_mountstats:vfs_access'),
+        ('Updatepage', 'proc_mountstats:vfs_updatepage'),
+        ('Readpage',   'proc_mountstats:vfs_readpage'),
+        ('Readpages',  'proc_mountstats:vfs_readpages'),
+        ('Writepage',  'proc_mountstats:vfs_writepage'),
+        ('Writepages', 'proc_mountstats:vfs_writepages'),
+        ('Getdents',   'proc_mountstats:vfs_getdents'),
+        ('Setattr',    'proc_mountstats:vfs_setattr'),
+        ('Flush',      'proc_mountstats:vfs_flush'),
+        ('Fsync',      'proc_mountstats:vfs_fsync'),
+        ('Lock',       'proc_mountstats:vfs_lock'),
+        ('Release',    'proc_mountstats:vfs_release'),
+    )
 
 class Widget_InvalidateEvents(SimpleWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = 'Validation Events'
-        self.desc =  'Counters for validation events'
-        self.statbin_name =  'proc_mountstats'
+    widget = 'Validation Events'
+    desc =  'Counters for validation events'
 
-        self.ds_info = (
-            ('Inode Revalidate',  'inode_revalidate'),
-            ('Dentry Revalidate', 'dentry_revalidate'),
-            ('Data Invalidate',   'data_invalidate'),
-            ('Attr Invalidate',   'attr_invalidate'),
-        )
-
-        SimpleWidget.__init__(self, collection, selection, report, toc)
+    ds_info = (
+        ('Inode Revalidate',  'proc_mountstats:inode_revalidate'),
+        ('Dentry Revalidate', 'proc_mountstats:dentry_revalidate'),
+        ('Data Invalidate',   'proc_mountstats:data_invalidate'),
+        ('Attr Invalidate',   'proc_mountstats:attr_invalidate'),
+    )
 
 class Widget_PnfsReadWrite(SimpleWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = 'pNFS Events'
-        # XXX counts or bytes??
-        self.desc =  'Counters for pNFS reads and writes'
-        self.statbin_name =  'proc_mountstats'
+    widget = 'pNFS Events'
+    # XXX counts or bytes??
+    desc =  'Counters for pNFS reads and writes'
 
-        self.ds_info = (
-            ('Reads',  'pnfs_read'),
-            ('Writes', 'pnfs_write'),
-        )
-
-        SimpleWidget.__init__(self, collection, selection, report, toc)
+    ds_info = (
+        ('Reads',  'proc_mountstats:pnfs_read'),
+        ('Writes', 'proc_mountstats:pnfs_write'),
+    )
 
 class Widget_OtherEvents(SimpleWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = 'NFS Events'
-        self.desc =  'Counters for NFS events'
-        self.statbin_name =  'proc_mountstats'
+    widget = 'NFS Events'
+    desc =  'Counters for NFS events'
 
-        self.ds_info = (
-            ('Short Read',       'short_read'),
-            ('Short Write',      'short_write'),
-            ('Congestion Wait',  'congestion_wait'),
-            ('Extend Write',     'extend_write'),
-            ('Setattr Truncate', 'setattr_trunc'),
-            ('Delay',            'delay'),
-            ('Silly Rename',     'silly_rename'),
-        )
-
-        SimpleWidget.__init__(self, collection, selection, report, toc)
+    ds_info = (
+        ('Short Read',       'proc_mountstats:short_read'),
+        ('Short Write',      'proc_mountstats:short_write'),
+        ('Congestion Wait',  'proc_mountstats:congestion_wait'),
+        ('Extend Write',     'proc_mountstats:extend_write'),
+        ('Setattr Truncate', 'proc_mountstats:setattr_trunc'),
+        ('Delay',            'proc_mountstats:delay'),
+        ('Silly Rename',     'proc_mountstats:silly_rename'),
+    )
 
 class BucketWidget(Widget):
-    suffixes = None
     bucket_def = None
-    other_name = 'other'
+    bucket_table_html = ''
+    bucket_pie_html = ''
 
     def __init__(self, collection, selection, report, toc):
-        assert self.suffixes
         assert self.bucket_def
-        assert self.other_name
         assert self.desc
-
-        if not isinstance(self.suffixes, (list, tuple)):
-            self.suffixes = [ self.suffixes ]
-
-        self.sub_desc = self.desc
-        self.desc += ' by group'
 
         Widget.__init__(self, collection, selection, report, toc)
 
     def setup(self):
-        keys = [ x 
-            for x in self.collection.get_valid_statbin_keys(self.statbin_name)
-            if self.bucket_def.has_suffix(x, self.suffixes) ]
+        bucket_names = self.bucket_def.bucket_names()
+        groups, vals = self.collection.gather_data(bucket_names, self.selection)
 
-        groups, vals = self.gather_buckets(keys)
+        bucket_totals = {}
+        bucket_hits = {}
+        total = 0.0
 
-        descmap, bettermap = \
-            self.bucket_def.bucket_info(self.statbin_name, self.selection,
-                                        self.report, self, groups, keys, vals,
-                                        self.other_name, self.suffixes)
+        for bucket_name in bucket_names:
+            bucket_totals[bucket_name] = 0.0
+            bucket_hits[bucket_name] = set()
 
-        def fmt_key(x):
-            return find_suffix(x, self.suffixes)[1]
-
-        def fmt_title(x):
-            return find_suffix(x, self.suffixes)[0]
-
-        bucket_names = self.bucket_def.bucket_names(self.other_name, self.suffixes)
-        for i in range(0, len(bucket_names), len(self.suffixes)):
-            # find all stats (across all groups) for the bucket group
-            buckets = []
+            # find all Buckets across all groups
+            this_bucket = []
+            # TODO: move unit gathering to Bucket?
+            units = None
             for g in groups:
-                buckets.extend([ vals[g][b]
-                               for b in bucket_names[i:i+len(self.suffixes)]
-                               if vals[g].has_key(b) ])
+                bucket = vals[g].get(bucket_name, None)
+                if bucket != None:
+                    this_bucket.append(bucket)
+                    for stat in bucket.foreach():
+                        m = stat.mean()
+                        total += m
+                        bucket_totals[bucket_name] += m
+                        bucket_hits[bucket_name].add(stat.name)
+                        u = self.collection.stat_units(stat.name)
+                        if not units:
+                            units = u
+                        else:
+                            assert u == units
 
-            # skip datasets for empty buckets
-            if not buckets or all([ x.empty() for x in buckets]):
+            # skip empty datasets
+            if not this_bucket or all([ x.empty() for x in this_bucket]):
                 continue
 
-            units = None
-            for bucket in buckets:
-                for stat in bucket.foreach():
-                    u = self.collection.stat_units(self.statbin_name,
-                                                   stat.name())
-                    if not units:
-                        units = u
-                    else:
-                        assert u == units
-
-            first = find_suffix(bucket_names[i], self.suffixes)
-            for check_idx in range(1, len(self.suffixes)):
-                this = find_suffix(bucket_names[i + check_idx], self.suffixes)
-                assert first[0] == this[0], \
-                    "first (%r) != this (%r)" % (first, this)
-                assert first[1] != this[1], \
-                    "first (%r) has same suffix as this (%r)" % \
-                        (first, this)
-
-            self.new_dataset(self.selection, fmt_title(bucket_names[i]), groups,
-                             bucket_names[i:i + len(self.suffixes)], vals,
-                             key_desc=descmap,
-                             bettermap=bettermap,
-                             fmt_key=fmt_key,
-                             fmt_cell=lambda g, b, v, s:
-                               fmt_cell_hits(self.report, v[g].get(b, None), s),
+            self.new_dataset(self.selection, bucket_name, groups,
+                             bucket_name, vals,
                              tall_cell=True,
+                             bucket_def=self.bucket_def,
                              units=units)
 
+        bucket_info = [ (k, v) for k, v in bucket_totals.iteritems() ]
+        bucket_info.sort(lambda x, y: cmp(x[1], y[1]) * -1)
+
+        bucket_info = [ x for x in bucket_info if x[1] ]
+
+        vals = {}
+        for name, btotal in bucket_info:
+            pct = (btotal / total) * 100.0
+            hits = list(bucket_hits[name])
+            hits = [ self.bucket_def.key_display(h) for h in bucket_hits[name] ]
+            hits.sort()
+            vals[name] = {'pct': "%.01f%%" % pct,
+                          'hits': ', '.join(hits)}
+
+        if len(bucket_info) > 1:
+            tbl = Table(self.report, vals,
+                        [ x[0] for x in bucket_info if x[1] ],
+                        ['pct', 'hits'], '', noheader=True)
+            self.bucket_table_html = tbl.html()
+
+            if ENABLE_PIE_GRAPHS:
+                pie_size = float(len(bucket_info)) / 2.0
+                pie_attrs = {
+                    'graph_width': pie_size,
+                    'graph_height': pie_size,
+                    'slice_labels': [''] * len(bucket_info),
+                    'slice_colors': COLORS,
+                    'slice_values': [ x[1] for x in bucket_info ],
+                    'slice_explode': [0.0] * len(bucket_info),
+                    'classes': ('bucket_pie',),
+                }
+                self.bucket_pie_html = \
+                    self.report.graphs.make_graph('pie', pie_attrs)
+
+class Widget_Iozone(BucketWidget):
+    widget = 'Iozone'
+    desc = 'Iozone Averages'
+    bucket_def = parse.iozone_bucket_def
+
+
+class Widget_WallTimes(BucketWidget):
+    widget = 'Wall Times'
+    desc = 'Wall-clock times of workloads'
+    bucket_def = parse.wall_times_bucket_def
+
+class Widget_ExecTimes(BucketWidget):
+    widget = 'Exec Times'
+    desc = 'Execution times of workloads'
+    bucket_def = parse.exec_times_bucket_def
+
+
 class Widget_NfsOpsCount(BucketWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = " NFS Operations "
-        self.desc = """ Count of NFS operations
-                    """
-        self.statnotes = [statnote_v3_no_lock]
-        self.statbin_name = 'nfsstats'
-
-        self.suffixes = 'count'
-        self.bucket_def = nfsstat_bucket_def
-
-        BucketWidget.__init__(self, collection, selection, report, toc)
+    widget = 'NFS Operations'
+    desc = 'Count of NFS operations'
+    statnotes = (statnote_v3_no_lock,)
+    bucket_def = parse.nfsstat_bucket_def
 
 
 class Widget_NfsOpsExec(BucketWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = "Exec Time"
-        self.desc = """ Execution time of NFS operations
-                    """
-        self.statnotes = [statnote_v3_no_lock, statnote_v41_pnfs_no_ds]
-        self.statbin_name = 'mountstats'
-
-        self.suffixes = 'exectime'
-        self.bucket_def = mountstat_bucket_def
-
-        BucketWidget.__init__(self, collection, selection, report, toc)
+    widget = 'Exec Time'
+    desc = 'Execution time of NFS operations'
+    statnotes = (statnote_v3_no_lock, statnote_v41_pnfs_no_ds)
+    bucket_def = parse.mountstat_exec_time_bucket_def
 
 class Widget_NfsOpsRtt(BucketWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = "RTT by Operation Group"
-        self.desc = """ Round trip time of NFS operations
-                    """
-        self.statnotes = [statnote_v3_no_lock, statnote_v41_pnfs_no_ds]
-        self.statbin_name = 'mountstats'
-
-        self.suffixes = 'rtt'
-        self.bucket_def = mountstat_bucket_def
-
-        BucketWidget.__init__(self, collection, selection, report, toc)
+    widget = 'RTT by Operation Group'
+    desc = 'Round trip time of NFS operations'
+    statnotes = (statnote_v3_no_lock, statnote_v41_pnfs_no_ds)
+    bucket_def = parse.mountstat_rtt_bucket_def
 
 class Widget_NfsOpsBytesSent(BucketWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = "Bytes Sent"
-        self.desc = """ Average bytes sent for NFS operations
-                    """
-        self.statnotes = [statnote_v3_no_lock, statnote_v41_pnfs_no_ds]
-        self.statbin_name = 'mountstats'
-
-        self.suffixes = 'avg_bytes_sent'
-        self.bucket_def = mountstat_bucket_def
-
-        BucketWidget.__init__(self, collection, selection, report, toc)
+    widget = 'Bytes Sent'
+    desc = 'Average bytes sent for NFS operations'
+    statnotes = (statnote_v3_no_lock, statnote_v41_pnfs_no_ds)
+    bucket_def = parse.mountstat_bytes_sent_bucket_def
 
 class Widget_NfsOpsBytesReceived(BucketWidget):
-    def __init__(self, collection, selection, report, toc):
-        self.widget = "Bytes Received"
-        self.desc = """ Average bytes received for NFS operations
-                    """
-        self.statnotes = [statnote_v3_no_lock, statnote_v41_pnfs_no_ds]
-        self.statbin_name = 'mountstats'
-
-        self.suffixes = 'avg_bytes_received'
-        self.bucket_def = mountstat_bucket_def
-
-        BucketWidget.__init__(self, collection, selection, report, toc)
+    widget = 'Bytes Received'
+    desc = 'Average bytes received for NFS operations'
+    statnotes = (statnote_v3_no_lock, statnote_v41_pnfs_no_ds)
+    bucket_def = parse.mountstat_bytes_received_bucket_def
 
 class Info:
     def __init__(self, collection, selection, report, toc):
@@ -1307,32 +1165,31 @@ class Info:
             topsel = self.collection.selection
 
         for wsel in topsel.foreach('workload'):
-            cinfo = self.collection.info(wsel)
-            w = wsel.fmt('workload')
-            d = cinfo['workload_description']
-            d = d[0]
-            wdesc = """
-                        <span class="workload_name">%s</span>
-                        <span class="workload_description">%s</span>
-                    """ % (w, d)
+            workload_name = wsel.fmt('workload')
 
-            command = cinfo['workload_command']
-            command = cinfo['workload_command'][0]
-            command = _htmlize_list(command.split('\n'))
+            # XXX 0?
+            workload_command = \
+                self.collection.get_attr(wsel, 'workload_command')[0]
+            workload_description = \
+                self.collection.get_attr(wsel, 'workload_description')[0]
+
+            wdesc = '<span class="workload_name">%s</span>' \
+                    '<span class="workload_description">%s</span>' % \
+                    (workload_name, workload_description)
+
+            command = _htmlize_list(workload_command.split('\n'))
 
             if isinstance(self.report, ReportSet):
-                rpts = []
-                for r in self.report.report_list:
-                    if r and r.selection.workloads == wsel.workloads:
-                        rpts.append('<a href="%s">%s</a>' % (r.path, r.title))
-                rpts = _htmlize_list(rpts)
+                title = _make_report_title(self.collection, wsel)
+                path = _make_report_path(title)
+                rpts = '<a href="%s">%s</a>' % (path, title)
             else:
                 rpts = ''
 
             workload_info.append((wdesc, command, rpts))
 
             for sel in wsel.foreach():
-                if self.collection.has_trace(sel):
+                if self.collection.has_traces(sel):
                     trace = self.collection.get_trace(sel)
 
                     mdt = sel.mountopt
@@ -1345,13 +1202,16 @@ class Info:
                         'workload': sel.workload,
                         'kernel': sel.kernel,
                         'mdt': mdt,
+                        'mountopt': sel.mountopt,
+                        'detect': sel.detect,
+                        'tags': sel.tags,
                         'client': sel.client,
                         'server': sel.server,
                         'path': sel.path,
                         'runs': trace.num_runs(),
-                        'starttime': min(trace.get_info('starttime')),
-                        'stoptime': max(trace.get_info('stoptime')),
-                        'mount_options': trace.get_info('mount_options'),
+                        'starttime': min(trace.get_attr('starttime')),
+                        'stoptime': max(trace.get_attr('stoptime')),
+                        'mount_options': trace.get_attr('mount_options'),
                     }
                     total_runs += real_info['runs']
 
@@ -1384,6 +1244,13 @@ class Info:
                         else:
                             info[k] = real_info[k]
 
+                    # recompute mdt
+                    info['mdt'] = info['mountopt']
+                    if info['detect']:
+                        info['mdt'] += ' ' + _join_lists(info['detect'])
+                    if info['tags']:
+                        info['mdt'] += ' ' + _join_lists(info['tags'])
+
                     self.selector_infos.append(info)
                     last_info = real_info
 
@@ -1401,11 +1268,9 @@ class Info:
         if isinstance(self.report, Report):
             self.workload = workload_info[0][0]
             self.command = workload_info[0][1]
-            self.report_type = self.report.report_type
         else:
             self.workload = None
             self.command = None
-            self.report_type = None
 
         # gather warnings
         self.warnings = self.collection.warnings()
@@ -1443,13 +1308,59 @@ class Info:
             k = k[:-1]
         return k
 
+_WIDGET_ORDER = (
+    #Widget_Iozone,
+    Widget_Filebench,
+    Widget_WallTimes,
+    Widget_ExecTimes,
+    Widget_NfsBytes,
+    Widget_Nfsiostat,
+    Widget_RpcCounts,
+    Widget_MaxSlots,
+    Widget_NfsOpsCount,
+    Widget_NfsOpsExec,
+    Widget_NfsOpsRtt,
+    Widget_NfsOpsBytesSent,
+    Widget_NfsOpsBytesReceived,
+    Widget_VfsEvents,
+    Widget_InvalidateEvents,
+    Widget_PnfsReadWrite,
+    Widget_OtherEvents,
+)
+
+def _make_report_path(title):
+    path = title
+    path = path.replace(' ', '_')
+
+    # erase certain chars
+    for c in ['/', ':', ',']:
+        path = path.replace(c, '')
+
+    path = path.lower() + '.html'
+    return path.replace('_report', '')
+
+def _make_report_title(collection, selection):
+    title = "Report"
+
+    info = selection.display_info(collection.selection)
+
+    if info:
+        out = []
+        for x in info:
+            if x[0].startswith('workload'):
+                out.append(str(x[1]))
+            else:
+                out.append('%s: %s' % x)
+        title += ': ' + ', '.join(out)
+
+    return title
+
 class Report:
-    report_type = None
     show_zeros = False
-    widget_classes = []
+    widget_classes = _WIDGET_ORDER
 
     def __init__(self, rptset, collection, selection,
-                 reportdir, graphs, cssfile, comparison):
+                 reportdir, graphs, cssfile):
 
         self.rptset = rptset
         self.collection = collection
@@ -1459,13 +1370,9 @@ class Report:
         self.graphs = graphs
         self.cssfile = cssfile
 
-        self.comparison = comparison
-
-        assert self.report_type
-
         self.toc = TocNode(None, None, None)
-        self.path = self._make_path()
-        self.title = self._make_title()
+        self.title = _make_report_title(collection, selection)
+        self.path = _make_report_path(self.title)
 
         self.report_info = Info(collection, selection, self, self.toc)
         self.widgets = []
@@ -1477,97 +1384,20 @@ class Report:
             else:
                 w.toc.unlink()
 
-    def _make_path(self):
-        path = self._make_title()
-        path = path.replace(' ', '_')
-
-        # erase certain chars
-        for c in ['/', ':', ',']:
-            path = path.replace(c, '')
-
-        path = path.lower() + '.html'
-        return path.replace('_report', '')
-
-    def _make_title(self):
-        title = "%s Report" % (self.report_type,)
-
-        if self.comparison:
-            title = "%s %s" % (self.comparison, title)
-
-        info = self.selection.display_info(self.collection.selection)
-
-        if info:
-            out = []
-            for x in info:
-                if x[0].startswith('workload'):
-                    out.append(str(x[1]))
-                else:
-                    out.append('%s: %s' % x)
-            title += ': ' + ', '.join(out)
-
-        return title
-
     def empty(self):
         return len(self.widgets) == 0
-
-    def shortcut_html(self):
-        template = html_template(TEMPLATE_SHORTCUT)
-        return template.render(report=self)
 
     def html(self):
         template = html_template(TEMPLATE_REPORT)
         return template.render(report=self)
 
-class Report_Basic(Report):
-    report_type = 'Basic'
-    widget_classes = [
-               Widget_Filebench,
-               Widget_RunTimes,
-               Widget_NfsBytes,
-               Widget_Nfsiostat,
-               Widget_RpcCounts,
-               Widget_MaxSlots,
-               Widget_NfsOpsCount,
-               Widget_NfsOpsExec,
-               Widget_NfsOpsRtt,
-               Widget_NfsOpsBytesSent,
-               Widget_NfsOpsBytesReceived,
-               Widget_VfsEvents,
-               Widget_InvalidateEvents,
-               Widget_PnfsReadWrite,
-               Widget_OtherEvents,
-              ]
-
-class Report_Comparison(Report):
-    report_type = 'Comparison'
-    widget_classes = [
-               Widget_Filebench,
-               Widget_RunTimes,
-               Widget_NfsBytes,
-               Widget_Nfsiostat,
-               Widget_RpcCounts,
-               Widget_MaxSlots,
-               Widget_NfsOpsCount,
-               Widget_NfsOpsExec,
-               Widget_NfsOpsRtt,
-               Widget_NfsOpsBytesSent,
-               Widget_NfsOpsBytesReceived,
-               Widget_VfsEvents,
-               Widget_InvalidateEvents,
-               Widget_PnfsReadWrite,
-               Widget_OtherEvents,
-              ]
-
 class ReportSet:
-    toplevel_reports = [ Report_Comparison ]
-    kernel_reports =   [ Report_Basic ]
-
     def __init__(self, collection, serial_graph_gen):
         self.collection = collection
         self.reportdir = collection.resultsdir
 
         self.imagedir = os.path.join(self.reportdir, 'images')
-        self.graphs = graph.GraphFactory(self.imagedir,
+        self.graphs = graph.GraphFactory(self.collection, self.imagedir,
                                          serial_gen=serial_graph_gen)
 
         self.cssfilepath = CSSFILEPATH
@@ -1581,8 +1411,6 @@ class ReportSet:
         self._clear_files()
 
         self._write_extrafiles()
-        self.report_list = []
-        self.report_index_last_workload = None
 
         self.reportset_info = Info(collection, collection.selection, self, None)
 
@@ -1607,146 +1435,26 @@ class ReportSet:
         print " %s" % path
 
     def _step_through_reports(self, cb_f):
-        def _apply(report_classes, xsel, comparison=None):
-            for report_class in report_classes:
-                cb_f(report_class, xsel, comparison=comparison)
+        for x in self.collection.selection.foreach('workload'):
+            cb_f(x)
 
-        topsel = self.collection.selection
-
-        # averages reports
-        order = ('workload', 'client', 'server', 'kernel')
-        for x in topsel.foreach(order):
-            _apply(self.kernel_reports, x)
-
-        self.progress()
-
-        # kernel comparison reports
-        order = ('workload', 'client', 'server')
-        for x in topsel.foreach(order):
-            if len(x.kernels) > 1:
-                _apply(self.toplevel_reports, x, comparison='Kernel')
-
-        self.progress()
-
-        # path comparison reports
-        order = ('workload', 'client', 'server')
-        for x in topsel.foreach(order):
-            if len(x.paths) > 1:
-                _apply(self.toplevel_reports, x, comparison='Path')
-
-        # tag comparison reports
-        order = ('workload', 'client', 'server')
-        for x in topsel.foreach(order):
-            if len(x.tags) > 1:
-                _apply(self.toplevel_reports, x, comparison='Tag')
-
-        # client comparison reports
-        order = ('workload', 'server', 'kernel')
-        for x in topsel.foreach(order):
-            if len(x.clients) > 1:
-                _apply(self.toplevel_reports, x, comparison='Client')
-
-        self.progress()
-
-        # server comparison reports
-        order = ('workload', 'client', 'kernel')
-        for x in topsel.foreach(order):
-            if len(x.servers) > 1:
-                _apply(self.toplevel_reports, x, comparison='Server')
-
-        self.progress()
-
-    def progress(self, report=None):
-        if report == None:
-            if hasattr(self, '_last_thing'):
-                del self._last_thing
-            return
-
-        def _add(out, report, thing, spaces=0):
-            if not hasattr(self, '_last_thing'):
-                self._last_thing = {}
-
-            if not self._last_thing:
-                name = report.report_type
-                if report.comparison:
-                    name = "%s %s" % (report.comparison, name)
-                print
-                inform('Generating %s reports:' % name)
-                print
-
-            sel = report.selection
-
-            obj = getattr(sel, thing + 's')
-            allsel = self.collection.selection
-            last = self._last_thing.get(thing, None)
-            if last and getattr(sel, thing + 's') == last:
-                return
-            self._last_thing[thing] = getattr(sel, thing + 's')
-            plural = len(obj) > 1 and 's' or ''
-
-            thing_str = '%s%s:' % (thing, plural)
-            if not (len(obj) > 1 and obj == getattr(allsel, thing + 's')):
-                formatted = sel.fmt(thing, short=False)
-                out.append('%s%-10s %s' % (' ' * spaces, thing_str, formatted))
-
-            # clear stuff hack
-            def _del(x):
-                try:
-                    del self._last_thing[x]
-                except:
-                    pass
-
-            # XXX
-            if thing == 'client':
-                for x in ('server', 'workload', 'kernel', 'mountopt'):
-                    _del(x)
-            elif thing == 'server':
-                for x in ('workload', 'kernel', 'mountopt'):
-                    _del(x)
-            elif thing == 'workload':
-                for x in ('kernel', 'mountopt'):
-                    _del(x)
-            elif thing == 'kernel':
-                for x in ('mountopt',):
-                    _del(x)
-
-        out = []
-        _add(out, report, 'client', 1)
-        _add(out, report, 'server', 1)
-        _add(out, report, 'workload', 2)
-        _add(out, report, 'kernel', 3)
-        _add(out, report, 'mountopt', 5)
-
-        print "\n".join(out)
-
-    def generate_report(self, report_class, selection, comparison=None):
+    def generate_report(self, selection):
         if not self.collection.has_traces(selection):
             return
 
-        r = report_class(self, self.collection, selection,
-                         self.reportdir, self.graphs,
-                         self.cssfile, comparison)
+        r = Report(self, self.collection, selection,
+                   self.reportdir, self.graphs,
+                   self.cssfile)
 
-        if not r.empty():
-            # insert divider
-            if self.report_index_last_workload and \
-                self.report_index_last_workload != selection.workload:
-                self.report_list.append(None)
-            self.report_index_last_workload = selection.workload
-
-            self.progress(r)
-            self.report_list.append(r)
+        self._write_report(r)
 
     def generate_reports(self):
         check_mpl_version()
-        self._step_through_reports(self.generate_report)
         print
-        inform("Writing reports:")
+        inform("Generating Reports")
         print
-        for r in self.report_list:
-            if r:
-                self._write_report(r)
         self._write_index()
+        self._step_through_reports(self.generate_report)
         print
         self.graphs.wait_for_graphs()
 
