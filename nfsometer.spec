@@ -1,6 +1,6 @@
 Name: nfsometer		
 Version: 1.7
-Release: 0%{?dist}
+Release: 1%{?dist}
 Summary: NFS Performance Framework Tool
 
 Group: Applications/System
@@ -21,6 +21,8 @@ Requires: filebench
 Requires: time
 Requires: git
 
+Patch001: nfsometer-1.7-bz1264514
+
 %description
 NFSometer is a performance measurement framework for running workloads and 
 reporting results across NFS protocol versions, NFS options and Linux 
@@ -28,6 +30,8 @@ NFS client implementations.
 
 %prep
 %setup -q
+
+%patch001 -p1
 
 %build
 %{__python} setup.py build
@@ -44,6 +48,9 @@ NFS client implementations.
 %doc COPYING README
 
 %changelog
+* Mon Apr  4 2016 Steve Dickson <steved@redhat.com> 1.7-1
+- nfsometer fails on NFSv3 and NFSv4 shares (bz 1264514)
+
 * Wed Jan 29 2014 Steve Dickson <steved@redhat.com> 1.7-0
 - Updated to the latest upstream release: 1.7 (bz 1059371)
 
